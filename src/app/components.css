@@ -1,0 +1,211 @@
+/* Styles for popups, the automation form, post picker, inbox and profile box. Uses tokens from globals.css. */
+
+/* ---------- Form rows: fields side by side, wrapping on narrow screens ---------- */
+.field-row { display: flex; flex-wrap: wrap; gap: 12px 16px; }
+.field-row > .field { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; }
+.field-row > .field textarea { flex: 1; min-height: 96px; }
+label.check { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; color: var(--text); font-size: 13px; }
+
+/* ---------- Modal ---------- */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 2147483000; display: grid; place-items: center; padding: 20px;
+  background: rgba(5, 5, 15, 0.55); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  animation: sh-fade .15s ease-out;
+}
+.modal {
+  width: min(560px, 100%); max-height: calc(100vh - 40px); display: flex; flex-direction: column;
+  background: var(--card-solid); border: 1px solid var(--glass-border); border-radius: 22px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .45);
+}
+.modal-wide { width: min(1080px, 100%); }
+.modal-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--grid); }
+.modal-head h2 { margin: 0; font-size: 17px; flex: 1; }
+.modal-close {
+  width: 34px; height: 34px; padding: 0; border-radius: 50%; font-size: 20px; line-height: 1;
+  background: var(--btn-2); color: var(--text); box-shadow: none; border: 1px solid var(--glass-border);
+}
+.modal-close:hover { background: var(--btn-2-hover); transform: none; }
+.modal-body { padding: 18px 20px 20px; overflow-y: auto; }
+.modal-foot { justify-content: flex-end; margin-top: 16px; position: sticky; bottom: -20px; padding: 12px 0 0; background: var(--card-solid); }
+@keyframes sh-fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---------- Segmented control ---------- */
+.seg { display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px; background: var(--glass); border: 1px solid var(--glass-border); }
+.seg button { padding: 6px 14px; border-radius: 999px; background: transparent; color: var(--muted); box-shadow: none; border: none; font-size: 13px; }
+.seg button:hover { background: var(--glass-hover); color: var(--text); transform: none; }
+.seg button[aria-pressed="true"] { background: var(--grad); color: #fff; }
+
+/* ---------- Post picker ---------- */
+.picker-field {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 42px; padding: 6px 12px; text-align: left;
+  background: var(--input); color: var(--text); border: 1px solid var(--glass-border); border-radius: 12px; box-shadow: none; font-weight: 500;
+}
+.picker-field:hover { background: var(--glass-hover); transform: none; }
+.picker-label { flex: 1; }
+.picker-field img { width: 28px; height: 28px; max-width: 28px; object-fit: cover; border-radius: 6px; }
+.picker-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.picker-chip { position: relative; width: 34px; height: 34px; flex: none; border-radius: 8px; overflow: hidden; background: var(--btn-2); border: 1px solid var(--glass-border); }
+.picker-chip img { width: 34px; height: 34px; max-width: 34px; object-fit: cover; display: block; }
+.picker-chip .chip-type { position: absolute; left: 3px; bottom: 2px; color: #fff; font-size: 9px; text-shadow: 0 1px 2px rgba(0, 0, 0, .8); }
+.picker-chip button {
+  position: absolute; top: 2px; right: 2px; width: 16px; height: 16px; padding: 0; border-radius: 50%;
+  font-size: 11px; line-height: 1; background: rgba(0, 0, 0, .65); color: #fff; box-shadow: none; border: none;
+}
+.picker-chip button:hover { background: var(--danger); transform: none; }
+.pick-tile img, .picker-stack img { max-width: 100%; }
+.picker-stack { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.picker-stack img, .picker-blank { width: 28px; height: 28px; border-radius: 6px; object-fit: cover; background: var(--btn-2); flex: none; }
+.picker-change { color: var(--accent); font-size: 12px; font-weight: 700; }
+.pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 6px; }
+.pick-tile {
+  position: relative; aspect-ratio: 1 / 1; padding: 0; overflow: hidden; border-radius: 10px;
+  background: var(--btn-2); border: 2px solid transparent; box-shadow: none;
+}
+.pick-tile:hover { transform: none; background: var(--btn-2); border-color: var(--glass-border); }
+.pick-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pick-tile.picked { border-color: var(--accent); }
+.pick-tile.picked img { opacity: .8; }
+.pick-check {
+  position: absolute; top: 4px; right: 4px; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 11px; color: #fff; background: rgba(0, 0, 0, .35); border: 2px solid #fff;
+}
+.pick-tile.picked .pick-check { background: var(--accent); border-color: var(--accent); }
+.pick-type { position: absolute; top: 6px; left: 6px; color: #fff; font-size: 11px; text-shadow: 0 1px 3px rgba(0, 0, 0, .7); }
+.pick-cap {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 8px 4px 3px; font-size: 9px; color: #fff; font-weight: 600;
+  background: linear-gradient(transparent, rgba(0, 0, 0, .65));
+}
+
+/* ---------- Automation list ---------- */
+.auto-list { display: grid; gap: 12px; }
+.auto-card { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 0; }
+.auto-thumb {
+  position: relative; width: 64px; height: 64px; border-radius: 14px; overflow: hidden; flex: none;
+  display: grid; place-items: center; font-size: 24px; color: #fff; background: var(--grad);
+}
+.auto-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.auto-thumb-count { position: absolute; right: 4px; bottom: 4px; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: rgba(0, 0, 0, .6); }
+.auto-main { flex: 1 1 260px; min-width: 0; }
+.auto-counts { display: flex; gap: 14px; margin-top: 6px; font-size: 13px; color: var(--muted); }
+.auto-counts b { color: var(--text); }
+.auto-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* ---------- Messages inbox ---------- */
+.inbox { display: grid; grid-template-columns: minmax(260px, 340px) 1fr; padding: 0; overflow: hidden; height: calc(100vh - 170px); min-height: 480px; }
+.inbox-list { border-right: 1px solid var(--grid); overflow-y: auto; }
+.inbox-tools { display: flex; gap: 8px; padding: 12px; }
+.thread { display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin: 0 6px; border-radius: 12px; }
+.thread:hover { background: var(--glass-hover); }
+.thread.active { background: var(--accent-soft); }
+.thread-avatar { width: 40px; height: 40px; border-radius: 50%; flex: none; display: grid; place-items: center; font-weight: 700; color: #fff; background: var(--grad); }
+.thread-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.thread-text .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.unread { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; }
+.inbox-chat { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.chat-empty { margin: auto; }
+.chat-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--grid); }
+.chat-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 6px; }
+.bubble-row { display: flex; }
+.bubble-row.out { justify-content: flex-end; }
+.bubble { max-width: min(70%, 520px); padding: 9px 13px; border-radius: 18px; white-space: pre-wrap; word-break: break-word; }
+.bubble.in { background: var(--glass-strong); border: 1px solid var(--glass-border); border-bottom-left-radius: 6px; }
+.bubble.out { background: var(--accent); color: #fff; border-bottom-right-radius: 6px; }
+.bubble-meta { font-size: 10.5px; opacity: .7; margin-top: 3px; }
+.chat-compose { display: flex; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--grid); }
+
+/* ---------- Instagram-style profile box (actions pinned to the top-right corner) ---------- */
+.ig-profile { position: relative; display: flex; gap: 40px; align-items: flex-start; flex-wrap: wrap; padding: 28px; border-radius: 24px; }
+.ig-main { flex: 1; min-width: 260px; }
+.ig-top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; padding-right: 330px; }
+.ig-username { font-size: 22px; font-weight: 700; }
+.ig-actions { position: absolute; top: 20px; right: 20px; display: flex; gap: 8px; }
+.ig-name { font-weight: 600; margin-bottom: 8px; }
+.ig-stats { display: flex; gap: 28px; flex-wrap: wrap; margin-bottom: 12px; font-size: 15px; }
+.ig-stats b { font-weight: 700; }
+
+/* ---------- Dashboard sections ---------- */
+.section-nav { display: flex; flex-wrap: wrap; gap: 8px; margin: -6px 0 18px; position: sticky; top: 8px; z-index: 5; }
+.section-nav a {
+  padding: 7px 14px; border-radius: 999px; font-size: 13px; font-weight: 600;
+  background: var(--glass-strong); border: 1px solid var(--glass-border);
+  -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+}
+.section-nav a:hover { background: var(--glass-hover); }
+.dash-section { scroll-margin-top: 64px; margin-bottom: 8px; }
+.dash-section .charts-2 { margin-top: 16px; }
+.seg-link { padding: 6px 12px; border-radius: 999px; color: var(--muted); font-size: 12.5px; font-weight: 600; }
+.seg-link:hover { background: var(--glass-hover); color: var(--text); }
+.seg-link[aria-pressed="true"] { background: var(--grad); color: #fff; }
+.perf-table td:nth-child(n+4), .perf-table th:nth-child(n+4) { text-align: right; font-variant-numeric: tabular-nums; }
+.perf-table .cap { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.top-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+.top-card { display: block; border-radius: 16px; overflow: hidden; background: var(--glass-strong); border: 1px solid var(--glass-border); transition: transform .15s; }
+.top-card:hover { transform: translateY(-2px); }
+.top-media { position: relative; aspect-ratio: 4 / 5; background: var(--btn-2); }
+.top-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.top-rank { position: absolute; left: 8px; top: 8px; padding: 2px 8px; border-radius: 999px; font-weight: 800; font-size: 12px; color: #fff; background: var(--grad); }
+.top-stats { display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 8px 10px; font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* ---------- Comments ---------- */
+.comment.reply { margin-left: 28px; }
+.comment.deleted { opacity: .6; }
+.comment.deleted > div:nth-child(2) { text-decoration: line-through; }
+
+@media (max-width: 900px) {
+  .ig-top { padding-right: 0; }
+  .ig-actions { position: static; flex-wrap: wrap; width: 100%; }
+}
+@media (max-width: 760px) {
+  .inbox { grid-template-columns: 1fr; height: auto; }
+  .inbox-list { max-height: 260px; border-right: none; border-bottom: 1px solid var(--grid); }
+  .chat-body { min-height: 320px; }
+  .ig-profile { gap: 18px; padding: 18px; }
+  .modal-backdrop { padding: 10px; }
+}
+
+/* Safety net: images inside form fields/picker buttons always stay thumbnail-sized. */
+.picker-btn img, .picker-field img { width: 28px !important; height: 28px !important; max-width: 28px !important; object-fit: cover; border-radius: 6px; }
+.picker-btn { display: flex; align-items: center; gap: 8px; max-height: 44px; overflow: hidden; }
+.picker-btn .picker-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Sidebar account card links to the profile page */
+.side-nav a.side-user { display: flex; gap: 10px; align-items: center; padding: 10px 12px; font-size: 14px; transition: background .15s, box-shadow .15s; }
+.side-nav a.side-user:hover { background: var(--glass-hover); }
+.side-nav a.side-user.active { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); font-weight: 400; }
+
+/* Home: accounts table */
+.accounts-table td:first-child, .accounts-table th:first-child { text-align: left; }
+.accounts-table td:last-child { text-align: right; }
+.acct-cell { display: flex; align-items: center; gap: 10px; min-width: 200px; }
+.acct-cell .avatar { width: 40px; height: 40px; }
+.acct-cell > span { display: flex; flex-direction: column; }
+.page-head .theme-toggle { min-width: 200px; }
+
+/* Choose-accounts step: centered card with a step indicator */
+.choose { width: 100%; max-width: 520px; margin: 0 auto; }
+.choose-card .lead b { color: var(--text); }
+.choose-steps { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; font-size: 11.5px; font-weight: 600; }
+.choose-steps span { padding: 4px 10px; border-radius: 999px; background: var(--btn-2); color: var(--muted); }
+.choose-steps .done { color: var(--ok-fg); background: var(--ok-bg); }
+.choose-steps .now { color: #fff; background: var(--grad); }
+.choose-submit:disabled { opacity: .55; cursor: default; }
+.sync-banner { display: flex; align-items: center; gap: 10px; }
+.sync-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); animation: sh-pulse 1.2s ease-in-out infinite; }
+@keyframes sh-pulse { 0%, 100% { opacity: .35; transform: scale(.85); } 50% { opacity: 1; transform: scale(1.1); } }
+
+/* SMC logo lockup (icon + name) */
+.brand.brand-lockup {
+  display: flex; align-items: center; gap: 10px; background: none; -webkit-background-clip: border-box; background-clip: border-box;
+  color: var(--text); -webkit-text-fill-color: currentColor;
+}
+.brand-lockup.center { justify-content: center; }
+.brand-lockup img { flex: none; border-radius: 9px; box-shadow: 0 6px 18px rgba(124, 92, 255, .35); }
+.brand-lockup > span {
+  display: flex; flex-direction: column; line-height: 1; font-size: 22px; font-weight: 800; letter-spacing: -0.5px;
+  background: var(--grad); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.brand-lockup small {
+  margin-top: 4px; font-size: 10.5px; font-weight: 600; letter-spacing: .2px;
+  -webkit-text-fill-color: var(--muted); color: var(--muted);
+}
