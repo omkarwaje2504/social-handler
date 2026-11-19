@@ -10,6 +10,7 @@ export function AccountActions({ accountId, username }: { accountId: string; use
   const [err, setErr] = useState<string | null>(null);
   const router = useRouter();
 
+  
   async function remove() {
     if (
       !confirm(
