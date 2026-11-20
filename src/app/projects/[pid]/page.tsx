@@ -5,7 +5,7 @@ import { canManageProject, isSuper, requireAccess, requireUser } from "@/lib/aut
 import { sql } from "@/lib/db";
 import { encodeHash, toPublic } from "@/lib/hash";
 import type { AccountDoc, PostDoc, ScheduledPostDoc } from "@/lib/models";
-import { ACCOUNT_TYPES, accountTypeOf } from "@/lib/account-types";
+import { accountTypeOf } from "@/lib/account-types";
 import { PERIODS, PERIOD_LABEL, countByPeriod, postsPerDay } from "@/lib/stats";
 import { BarList, ColumnChart, Kpi, TrendChart } from "@/components/charts";
 import { fmtCompact } from "@/lib/format";
@@ -77,10 +77,9 @@ export default async function ProjectPage({ params }: { params: Promise<{ pid: s
       where not p.removed_from_app and p.account_id = any(${ids}::int[])
       order by coalesce((p.metrics->>'views')::bigint, (p.metrics->>'plays')::bigint, p.like_count + p.comments_count) desc nulls last
       limit 8`,
-    sql<{ accountId: number; dms: number; inbox: number; automations: number; views: string }[]>`
+    sql<{ accountId: number; dms: number; automations: number; views: string }[]>`
       select a.id as account_id,
         (select count(*)::int from automation_logs l where l.account_id = a.id and l.status = 'sent') as dms,
-        (select count(*)::int from messages m where m.account_id = a.id and m.direction = 'in') as inbox,
         (select count(*)::int from automations x where x.account_id = a.id and x.enabled) as automations,
         (select coalesce(sum(coalesce((p.metrics->>'views')::bigint, (p.metrics->>'plays')::bigint, 0)), 0)::bigint
            from posts p where p.account_id = a.id and not p.removed_from_app) as views
@@ -121,12 +120,6 @@ export default async function ProjectPage({ params }: { params: Promise<{ pid: s
   const byId = new Map(accounts.map((a) => [a.id, a]));
   const sum = (f: (s: PerAccount) => number) => perAccount.reduce((t, s) => t + f(s), 0);
   const totalFollowers = accounts.reduce((t, a) => t + (a.followersCount ?? 0), 0);
-
-  const engagement = (a: AccountDoc) => {
-    const s = stats.get(a.id);
-    if (!s || !s.posts || !a.followersCount) return "–";
-    return `${(((s.likes + s.comments) / s.posts / a.followersCount) * 100).toFixed(2)}%`;
-  };
 
   const shareUrl = project.connectToken ? `${process.env.APP_URL}/api/auth/instagram?p=${project.connectToken}` : "";
   const waText = `Please connect your Instagram account to ${project.name} on SMC. Open this link and approve access: ${shareUrl}`;
@@ -185,8 +178,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ pid: s
         <table className="perf-table accounts-table sticky-first">
           <thead>
             <tr>
-              <th>Account</th><th>Type</th><th>Followers</th><th>Posts</th><th>Reels</th><th>Views</th>
-              <th>Likes</th><th>Comments</th><th>Engagement</th><th>Auto-DMs</th><th>Inbox</th><th>Last post</th><th>Synced</th><th></th>
+              <th>Account</th><th>Followers</th><th>Posts</th><th>Reels</th><th>Views</th>
+              <th>Likes</th><th>Comments</th><th>Auto-DMs</th><th>Synced</th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -207,27 +200,17 @@ export default async function ProjectPage({ params }: { params: Promise<{ pid: s
                         </span>
                       </Link>
                     </td>
-                    <td>
-                      {canManage ? (
-                        <AccountMeta projectId={code} accountId={a.hash} accountType={a.accountType}
-                          types={ACCOUNT_TYPES.map((t) => ({ key: t.key, label: t.label }))} projects={movableProjects} />
-                      ) : (
-                        <span>{type.label}</span>
-                      )}
-                    </td>
                     <td>{(a.followersCount ?? 0).toLocaleString()}</td>
                     <td>{((s?.posts ?? 0) - (s?.reels ?? 0)).toLocaleString()}</td>
                     <td>{(s?.reels ?? 0).toLocaleString()}</td>
                     <td>{Number(act?.views ?? 0).toLocaleString()}</td>
                     <td>{(s?.likes ?? 0).toLocaleString()}</td>
                     <td>{(s?.comments ?? 0).toLocaleString()}</td>
-                    <td>{engagement(a)}</td>
                     <td>{(act?.dms ?? 0).toLocaleString()}</td>
-                    <td>{(act?.inbox ?? 0).toLocaleString()}</td>
-                    <td>{s?.lastPost ? s.lastPost.toLocaleDateString() : "–"}</td>
                     <td>{a.lastSyncedAt ? a.lastSyncedAt.toLocaleDateString() : "never"}</td>
                     <td>
                       <div className="row" style={{ gap: 6, flexWrap: "nowrap", justifyContent: "flex-end" }}>
+                        {canManage && movableProjects.length > 1 && <AccountMeta projectId={code} accountId={a.hash} projects={movableProjects} />}
                         <Link className="btn sm" href={`/accounts/${a.hash}`}>Open</Link>
                         <Link className="btn secondary sm icon-btn" href={`/accounts/${a.hash}/messages`} title="Messages" aria-label="Messages"><Icon name="message" size={16} /></Link>
                         <Link className="btn secondary sm icon-btn" href={`/accounts/${a.hash}/automations`} title={`Automations (${act?.automations ?? 0} active)`} aria-label="Automations"><Icon name="zap" size={16} /></Link>
@@ -237,7 +220,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ pid: s
                 );
               })}
             {accounts.length === 0 && (
-              <tr><td colSpan={14}>
+              <tr><td colSpan={10}>
                 <div className="empty">
                   <span className="empty-ico"><Icon name="instagram" size={24} /></span>
                   <b>{unassigned ? "Every account belongs to a project" : "No accounts linked yet"}</b>

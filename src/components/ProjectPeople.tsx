@@ -115,12 +115,12 @@ export function ProjectPeople({
   );
 }
 
-/** Inline editor for an account's type and project (the owner or a super admin). */
+/** Inline editor for an account's project, and its type when `types` is given (the owner or a super admin). */
 export function AccountMeta({
   projectId, accountId, accountType, types, projects,
 }: {
-  projectId: string; accountId: string; accountType: string;
-  types: { key: string; label: string }[]; projects: { id: string; name: string }[];
+  projectId: string; accountId: string; accountType?: string;
+  types?: { key: string; label: string }[]; projects: { id: string; name: string }[];
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -137,9 +137,11 @@ export function AccountMeta({
   }
   return (
     <div className="acct-meta">
-      <select defaultValue={accountType} disabled={busy} onChange={(e) => save({ accountType: e.target.value })} aria-label="Account type">
-        {types.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
-      </select>
+      {types && (
+        <select defaultValue={accountType} disabled={busy} onChange={(e) => save({ accountType: e.target.value })} aria-label="Account type">
+          {types.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+        </select>
+      )}
       {projects.length > 1 && (
         <select
           value=""
