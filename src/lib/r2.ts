@@ -51,3 +51,9 @@ export async function r2SignedUrl(key: string, fileName: string, seconds = 300) 
   const signed = await client.sign(url.toString(), { method: "GET", aws: { signQuery: true } });
   return signed.url;
 }
+
+/** Fetches an object from R2 (server side), e.g. to stream uploaded media to Instagram. */
+export async function r2Get(key: string) {
+  const { client, base } = cfg();
+  return client.fetch(`${base}/${enc(key)}`, { method: "GET" });
+}

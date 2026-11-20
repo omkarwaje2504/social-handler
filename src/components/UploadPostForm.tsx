@@ -20,26 +20,35 @@ export function UploadPostForm({ accountId }: { accountId: string }) {
     e.preventDefault();
     setBusy(true);
     setMsg(null);
+    try {
+      await publish();
+    } catch {
+      setMsg({ ok: false, text: "Something went wrong. Check your connection and try again." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Reads an API reply; a non-JSON error page becomes a readable message instead of a crash.
+  async function reply(res: Response) {
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok, data: data as { error?: string; url?: string; isVideo?: boolean } };
+  }
+
+  async function publish() {
 
     let mediaUrl = link.trim();
     let type: "IMAGE" | "REELS" = mediaType;
 
-    // File source: store it in the app's public folder first to get a public URL
+    // File source: store it first to get a public URL Instagram can download
     if (source === "file") {
-      if (!file) {
-        setBusy(false);
-        return setMsg({ ok: false, text: "Choose a file first." });
-      }
+      if (!file) return setMsg({ ok: false, text: "Choose a file first." });
       const form = new FormData();
       form.append("file", file);
-      const up = await fetch("/api/uploads", { method: "POST", body: form });
-      const upData = await up.json();
-      if (!up.ok) {
-        setBusy(false);
-        return setMsg({ ok: false, text: upData.error });
-      }
-      mediaUrl = upData.url;
-      type = upData.isVideo ? "REELS" : "IMAGE";
+      const up = await reply(await fetch("/api/uploads", { method: "POST", body: form }));
+      if (!up.ok) return setMsg({ ok: false, text: up.data.error ?? "Upload failed. Try again." });
+      mediaUrl = up.data.url!;
+      type = up.data.isVideo ? "REELS" : "IMAGE";
     }
 
     // Schedule for later, or publish to Instagram now
@@ -55,9 +64,8 @@ export function UploadPostForm({ accountId }: { accountId: string }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ mediaUrl, mediaType: type, caption }),
         });
-    const data = await res.json();
-    setBusy(false);
-    if (!res.ok) return setMsg({ ok: false, text: data.error });
+    const done = await reply(res);
+    if (!done.ok) return setMsg({ ok: false, text: done.data.error ?? "Instagram didn't accept the post. Try again." });
     setMsg({
       ok: true,
       text: scheduled ? `Scheduled for ${new Date(scheduleAt).toLocaleString()}.` : "Published to Instagram.",
@@ -90,14 +98,14 @@ export function UploadPostForm({ accountId }: { accountId: string }) {
 
       {source === "file" ? (
         <div>
-          <label>File (JPG/PNG photo, or MP4/MOV reel)</label>
+          <label>File (JPG photo, or MP4/MOV reel)</label>
           <input
             type="file"
-            accept="image/jpeg,image/png,video/mp4,video/quicktime"
+            accept="image/jpeg,video/mp4,video/quicktime"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           />
           <p className="muted" style={{ marginTop: 4 }}>
-            Photos up to 8 MB, reels up to 100 MB. Instagram fetches the file from the app&apos;s public address, so keep the tunnel running while publishing.
+            Files up to 4 MB. Instagram accepts JPG photos (not PNG). For bigger reels, use &ldquo;Paste public link&rdquo;.
           </p>
         </div>
       ) : (
@@ -105,7 +113,7 @@ export function UploadPostForm({ accountId }: { accountId: string }) {
           <label>Public media URL</label>
           <input placeholder="https://…" value={link} onChange={(e) => setLink(e.target.value)} />
           <p className="muted" style={{ marginTop: 4 }}>
-            Must be publicly reachable (JPG/PNG for photos, MP4 for reels). Instagram downloads it from this URL.
+            Must be publicly reachable (JPG for photos, MP4 for reels). Instagram downloads it from this URL.
           </p>
           <label>Type</label>
           <select value={mediaType} onChange={(e) => setMediaType(e.target.value as "IMAGE" | "REELS")}>
