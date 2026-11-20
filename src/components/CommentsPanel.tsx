@@ -77,7 +77,7 @@ export function CommentsPanel({ postId }: { postId: string }) {
       {list.map((c) => (
         <div key={c.id} className={`comment${c.deletedAt ? " deleted" : ""}${c.parentId ? " reply" : ""}`}>
           <div className="meta">
-            @{c.fromUsername ?? "unknown"} · {new Date(c.commentedAt).toLocaleString()} · ♥ {c.likeCount}
+            @{c.fromUsername ?? "unknown"} · {new Date(c.commentedAt).toLocaleString()} · {c.likeCount} like{c.likeCount === 1 ? "" : "s"}
             {c.isOwn && <span className="pill" style={{ marginLeft: 6 }}>you</span>}
             {c.hidden && <span className="pill" style={{ marginLeft: 6 }}>hidden</span>}
             {c.deletedAt && <span className="pill" style={{ marginLeft: 6 }}>deleted {new Date(c.deletedAt).toLocaleDateString()}</span>}

@@ -1,15 +1,18 @@
 import { NextResponse } from "next/server";
-import { isId, sql } from "@/lib/db";
+import { guard } from "@/lib/auth";
+import { sql } from "@/lib/db";
 import type { AutomationDoc } from "@/lib/models";
+import { ensureHash, toPublic } from "@/lib/hash";
 
 // List automations for an account: GET /api/automations?accountId=...
 export async function GET(req: Request) {
   const accountId = new URL(req.url).searchParams.get("accountId");
   if (!accountId) return NextResponse.json({ error: "accountId required" }, { status: 400 });
-  if (!isId(accountId)) return NextResponse.json([]);
+  const { deny, id } = await guard("account", accountId);
+  if (deny) return deny;
   const rules = await sql<AutomationDoc[]>`
-    select * from automations where account_id = ${accountId} order by created_at desc`;
-  return NextResponse.json(rules);
+    select * from automations where account_id = ${id} order by created_at desc`;
+  return NextResponse.json(toPublic(rules));
 }
 
 // Create automation.
@@ -18,9 +21,10 @@ export async function POST(req: Request) {
   if (!b.accountId || !b.keyword || !b.followerMessage || !b.nonFollowerMessage) {
     return NextResponse.json({ error: "accountId, keyword, followerMessage, nonFollowerMessage are required" }, { status: 400 });
   }
-  if (!isId(b.accountId)) return NextResponse.json({ error: "Account not found" }, { status: 404 });
+  const { deny, id: accountId } = await guard("account", b.accountId);
+  if (deny) return deny;
   const doc = {
-    accountId: b.accountId as string,
+    accountId,
     name: b.name || `Keyword: ${b.keyword}`,
     keyword: String(b.keyword).trim(),
     igMediaIds: Array.isArray(b.igMediaIds) ? b.igMediaIds.map(String) : [],
@@ -31,5 +35,6 @@ export async function POST(req: Request) {
     publicReply: b.publicReply || null,
   };
   const [row] = await sql<AutomationDoc[]>`insert into automations ${sql(doc)} returning *`;
-  return NextResponse.json(row, { status: 201 });
+  await ensureHash("automations", row);
+  return NextResponse.json(toPublic(row), { status: 201 });
 }

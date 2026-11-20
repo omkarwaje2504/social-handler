@@ -1,15 +1,17 @@
 import Link from "next/link";
 import { connection } from "next/server";
-import { isId, sql } from "@/lib/db";
+import { sql } from "@/lib/db";
 import type { ScheduledPostDoc } from "@/lib/models";
 import { CancelScheduledButton } from "@/components/CancelScheduledButton";
+import { decodeHash } from "@/lib/hash";
 
 export default async function ScheduledPage({ params }: { params: Promise<{ id: string }> }) {
   await connection();
   const { id } = await params;
-  const rows = isId(id)
+  const aid = decodeHash("accounts", id); // id in the URL is the account's code
+  const rows = aid
     ? await sql<ScheduledPostDoc[]>`
-        select * from scheduled_posts where account_id = ${id} and status <> 'cancelled'
+        select * from scheduled_posts where account_id = ${aid} and status <> 'cancelled'
         order by publish_at desc limit 100`
     : [];
 
@@ -38,7 +40,7 @@ export default async function ScheduledPage({ params }: { params: Promise<{ id: 
                   <span className={`badge ${s.status}`}>{s.status}</span>
                   {s.error && <div className="muted" style={{ marginTop: 4 }}>{s.error}</div>}
                 </td>
-                <td>{s.status === "pending" && <CancelScheduledButton id={s.id} />}</td>
+                <td>{s.status === "pending" && <CancelScheduledButton id={s.hash} />}</td>
               </tr>
             ))}
             {rows.length === 0 && <tr><td colSpan={6} className="muted">Nothing scheduled yet.</td></tr>}

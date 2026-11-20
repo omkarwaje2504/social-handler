@@ -1,12 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import { BRAND } from "@/lib/brand";
-import { cookies } from "next/headers";
 import { connection } from "next/server";
 import Script from "next/script";
 import { sql } from "@/lib/db";
 import type { AccountDoc } from "@/lib/models";
-import { SESSION_COOKIE, isValidSession } from "@/lib/session";
-import { Sidebar, type SidebarAccount } from "@/components/Sidebar";
+import { getUser, projectIdsFor, scopeSql } from "@/lib/auth";
+import { Sidebar, type SidebarAccount, type SidebarProject } from "@/components/Sidebar";
 import { ThemeToggle, themeInitScript } from "@/components/ThemeToggle";
 import "./globals.css";
 import "./components.css";
@@ -52,14 +51,25 @@ export const viewport: Viewport = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   await connection();
-  // Only signed-in admins get the sidebar (and the user list). Public pages render bare.
-  const admin = await isValidSession((await cookies()).get(SESSION_COOKIE)?.value);
+  // Only signed-in people get the app chrome; the sidebar lists accounts they can open.
+  const user = await getUser();
 
   let accounts: SidebarAccount[] = [];
-  if (admin) {
-    const rows = await sql<Pick<AccountDoc, "id" | "username" | "name" | "profilePictureUrl">[]>`
-      select id, username, name, profile_picture_url from accounts order by created_at desc`;
-    accounts = rows.map((a) => ({ id: a.id, username: a.username, name: a.name ?? undefined, pic: a.profilePictureUrl ?? undefined }));
+  let projects: SidebarProject[] = [];
+  if (user) {
+    const ids = await projectIdsFor(user);
+    const scope = scopeSql(ids, "a.project_id");
+    projects = await sql<SidebarProject[]>`
+      select p.hash as id, p.name, (select count(*)::int from accounts a where a.project_id = p.id) as accounts
+      from projects p where ${scopeSql(ids, "p.id")} and p.status = 'active' order by p.name`;
+    const rows = await sql<(Pick<AccountDoc, "username" | "name" | "profilePictureUrl"> & { id: string; projectId: string | null; projectName: string | null })[]>`
+      select a.hash as id, a.username, a.name, a.profile_picture_url, p.hash as project_id, p.name as project_name
+      from accounts a left join projects p on p.id = a.project_id
+      where ${scope} order by a.created_at desc`;
+    accounts = rows.map((a) => ({
+      id: a.id, username: a.username, name: a.name ?? undefined, pic: a.profilePictureUrl ?? undefined,
+      projectId: a.projectId ?? undefined, projectName: a.projectName ?? undefined,
+    }));
   }
 
   return (
@@ -70,9 +80,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {/* Applies the saved light/dark choice before first paint. next/script injects it outside React,
             so it runs without the "script tag inside a React component" hydration error. */}
         <Script id="theme-init" strategy="beforeInteractive">{themeInitScript}</Script>
-        {admin ? (
+        {user ? (
           <div className="app">
-            <Sidebar accounts={accounts} />
+            <Sidebar
+              accounts={accounts}
+              projects={projects}
+              user={{ name: user.name, email: user.email, role: user.role, designation: user.designation }}
+            />
             <main className="content">{children}</main>
           </div>
         ) : (

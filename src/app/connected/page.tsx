@@ -23,7 +23,7 @@ export default async function ConnectedPage({ searchParams }: { searchParams: Pr
           </>
         ) : (
           <>
-            <h1 style={{ marginBottom: 10 }}>You&apos;re connected ✅</h1>
+            <h1 style={{ marginBottom: 10 }}>You&apos;re connected</h1>
             <p className="muted">
               {u ? <>Instagram account <b>@{u}</b> is now linked.</> : "Your Instagram account is now linked."} You can close this page.
             </p>

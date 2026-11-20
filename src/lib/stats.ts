@@ -49,7 +49,7 @@ export async function countByPeriod(
 }
 
 /** Latest snapshot on or before a given day. */
-async function snapshotOnOrBefore(accountId: string, day: Date) {
+async function snapshotOnOrBefore(accountId: number, day: Date) {
   const [row] = await sql<SnapshotDoc[]>`
     select * from snapshots where account_id = ${accountId} and day <= ${dayKey(day)}
     order by day desc limit 1`;
@@ -60,7 +60,7 @@ async function snapshotOnOrBefore(accountId: string, day: Date) {
  * Growth of a snapshot field per period (e.g. new followers).
  * null when there is no earlier snapshot to compare against yet.
  */
-export async function snapshotDeltas(accountId: string, field: "followers" | "likes" | "comments" | "mediaCount") {
+export async function snapshotDeltas(accountId: number, field: "followers" | "likes" | "comments" | "mediaCount") {
   const today = startOfDay(new Date());
   const pairs: Record<Period, [Date, Date]> = {
     today: [today, addDays(today, -1)],
@@ -80,7 +80,7 @@ export async function snapshotDeltas(accountId: string, field: "followers" | "li
 }
 
 /** Snapshot series for the last `days` days (one point per stored day). */
-export async function snapshotSeries(accountId: string, field: "followers" | "likes" | "comments", days = 30) {
+export async function snapshotSeries(accountId: number, field: "followers" | "likes" | "comments", days = 30) {
   const from = dayKey(addDays(new Date(), -days + 1));
   const rows = await sql<SnapshotDoc[]>`
     select * from snapshots where account_id = ${accountId} and day >= ${from} order by day`;

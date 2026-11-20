@@ -1,21 +1,23 @@
 import { NextResponse } from "next/server";
-import { isId, sql } from "@/lib/db";
+import { guard } from "@/lib/auth";
+import { sql } from "@/lib/db";
 import type { ScheduledPostDoc } from "@/lib/models";
+import { ensureHash, toPublic } from "@/lib/hash";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(_req: Request, { params }: Ctx) {
-  const { id } = await params;
-  if (!isId(id)) return NextResponse.json([]);
+  const { deny, id: id } = await guard("account", (await params).id);
+  if (deny) return deny;
   const rows = await sql<ScheduledPostDoc[]>`
     select * from scheduled_posts where account_id = ${id} order by publish_at`;
-  return NextResponse.json(rows);
+  return NextResponse.json(toPublic(rows));
 }
 
 // Schedule a post: { mediaUrl, mediaType, caption, publishAt (ISO) }
 export async function POST(req: Request, { params }: Ctx) {
-  const { id } = await params;
-  if (!isId(id)) return NextResponse.json({ error: "Account not found" }, { status: 404 });
+  const { deny, id: id } = await guard("account", (await params).id);
+  if (deny) return deny;
   const b = (await req.json()) as { mediaUrl?: string; mediaType?: string; caption?: string; publishAt?: string };
   const publishAt = b.publishAt ? new Date(b.publishAt) : null;
   if (!b.mediaUrl || !["IMAGE", "REELS"].includes(b.mediaType ?? "") || !publishAt || isNaN(+publishAt)) {
@@ -33,5 +35,6 @@ export async function POST(req: Request, { params }: Ctx) {
     status: "pending" as const,
   };
   const [row] = await sql<ScheduledPostDoc[]>`insert into scheduled_posts ${sql(doc)} returning *`;
-  return NextResponse.json(row, { status: 201 });
+  await ensureHash("scheduled_posts", row);
+  return NextResponse.json(toPublic(row), { status: 201 });
 }

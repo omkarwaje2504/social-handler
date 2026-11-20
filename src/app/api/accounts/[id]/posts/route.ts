@@ -1,24 +1,27 @@
 import { NextResponse } from "next/server";
-import { isId, sql } from "@/lib/db";
+import { guard } from "@/lib/auth";
+import { sql } from "@/lib/db";
 import { publishMedia, GraphError } from "@/lib/graph";
 import type { AccountDoc, PostDoc } from "@/lib/models";
 import { syncAccount } from "@/lib/sync";
+import { toPublic } from "@/lib/hash";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 // List posts stored for this account (synced from Instagram).
 export async function GET(_req: Request, { params }: Ctx) {
-  const { id } = await params;
-  if (!isId(id)) return NextResponse.json([]);
+  const { deny, id: id } = await guard("account", (await params).id);
+  if (deny) return deny;
   const posts = await sql<PostDoc[]>`
     select * from posts where account_id = ${id} and not removed_from_app
     order by "timestamp" desc nulls last`;
-  return NextResponse.json(posts);
+  return NextResponse.json(toPublic(posts));
 }
 
 // Publish a new post. Instagram needs a public URL to the image/video.
 export async function POST(req: Request, { params }: Ctx) {
-  const { id } = await params;
+  const { deny, id: id } = await guard("account", (await params).id);
+  if (deny) return deny;
   const { mediaUrl, mediaType, caption } = (await req.json()) as {
     mediaUrl: string;
     mediaType: "IMAGE" | "REELS";
@@ -28,7 +31,7 @@ export async function POST(req: Request, { params }: Ctx) {
     return NextResponse.json({ error: "mediaUrl and mediaType (IMAGE|REELS) are required" }, { status: 400 });
   }
 
-  const [account] = isId(id) ? await sql<AccountDoc[]>`select * from accounts where id = ${id}` : [];
+  const [account] = await sql<AccountDoc[]>`select * from accounts where id = ${id}`;
   if (!account) return NextResponse.json({ error: "Account not found" }, { status: 404 });
 
   try {

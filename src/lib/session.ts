@@ -1,4 +1,4 @@
-// Signed admin session cookie. Uses Web Crypto so it works in the proxy and in server code.
+// Signed user session cookie. Uses Web Crypto so it works in the proxy and in server code.
 
 export const SESSION_COOKIE = "sh_session";
 export const SESSION_DAYS = 7;
@@ -13,22 +13,30 @@ async function hmac(data: string) {
   return Buffer.from(sig).toString("hex");
 }
 
-/** Cookie value: "<expiry ms>.<hmac>" */
-export async function createSessionValue() {
+/**
+ * Cookie value: "<user code>.<expiry ms>.<hmac>" (the user's public code, never the integer id).
+ * Signed, so the proxy can trust it without the database.
+ */
+export async function createSessionValue(userId: string) {
   const exp = Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000;
-  return `${exp}.${await hmac(`admin.${exp}`)}`;
+  return `${userId}.${exp}.${await hmac(`u.${userId}.${exp}`)}`;
+}
+
+/** The user code in a valid, unexpired session cookie; null otherwise. */
+export async function readSession(value: string | undefined | null): Promise<string | null> {
+  if (!value) return null;
+  const [userId, expStr, sig] = value.split(".");
+  const exp = Number(expStr);
+  if (!userId || !exp || !sig || exp < Date.now()) return null;
+  const expected = await hmac(`u.${userId}.${exp}`);
+  if (expected.length !== sig.length) return null;
+  let diff = 0;
+  for (let i = 0; i < sig.length; i++) diff |= expected.charCodeAt(i) ^ sig.charCodeAt(i);
+  return diff === 0 ? userId : null;
 }
 
 export async function isValidSession(value: string | undefined | null) {
-  if (!value) return false;
-  const [expStr, sig] = value.split(".");
-  const exp = Number(expStr);
-  if (!exp || !sig || exp < Date.now()) return false;
-  const expected = await hmac(`admin.${exp}`);
-  if (expected.length !== sig.length) return false;
-  let diff = 0;
-  for (let i = 0; i < sig.length; i++) diff |= expected.charCodeAt(i) ^ sig.charCodeAt(i);
-  return diff === 0;
+  return (await readSession(value)) !== null;
 }
 
 /** Safe in-app redirect target: must be a local path, never another origin. */

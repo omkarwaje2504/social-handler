@@ -1,17 +1,20 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { isId, sql } from "@/lib/db";
+import { sql } from "@/lib/db";
 import type { AccountDoc, PostDoc } from "@/lib/models";
 import { fetchMediaInsights } from "@/lib/graph";
 import { PostEditor } from "@/components/PostEditor";
 import { CommentsPanel } from "@/components/CommentsPanel";
+import { decodeHash, encodeHash } from "@/lib/hash";
+import { Icon } from "@/components/Icon";
 
 export default async function PostPage({ params }: { params: Promise<{ id: string }> }) {
   await connection();
   const { id } = await params;
-  if (!isId(id)) notFound();
-  const [post] = await sql<PostDoc[]>`select * from posts where id = ${id}`;
+  const pid = decodeHash("posts", id); // id in the URL is the post's code
+  if (!pid) notFound();
+  const [post] = await sql<PostDoc[]>`select * from posts where id = ${pid}`;
   if (!post) notFound();
 
   const [account] = await sql<AccountDoc[]>`select * from accounts where id = ${post.accountId}`;
@@ -37,7 +40,7 @@ export default async function PostPage({ params }: { params: Promise<{ id: strin
         <h1 style={{ marginBottom: 0 }}>Post</h1>
         <span className="pill">{post.mediaType}</span>
         <div className="spacer" />
-        <Link className="btn secondary" href={`/accounts/${post.accountId}`}>← Back</Link>
+        <Link className="btn secondary" href={`/accounts/${encodeHash("accounts", post.accountId)}`}><Icon name="chevronLeft" size={16} />Back</Link>
         {post.permalink && <a className="btn secondary" href={post.permalink} target="_blank" rel="noreferrer">Open on Instagram</a>}
       </div>
 

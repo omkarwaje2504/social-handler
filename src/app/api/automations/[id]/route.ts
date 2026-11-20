@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
-import { isId, sql } from "@/lib/db";
+import { guard } from "@/lib/auth";
+import { sql } from "@/lib/db";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 // Stats for one automation: totals, today / yesterday / 7 days / 30 days, and every handled comment.
 export async function GET(_req: Request, { params }: Ctx) {
-  const { id } = await params;
-  if (!isId(id)) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const { deny, id: id } = await guard("automation", (await params).id);
+  if (deny) return deny;
   const [rule] = await sql`select id from automations where id = ${id}`;
   if (!rule) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -33,7 +34,7 @@ export async function GET(_req: Request, { params }: Ctx) {
     from automation_logs where automation_id = ${id}`;
 
   const logs = await sql`
-    select id, created_at, commenter_igsid, commenter_username, comment_text, is_follower, message_sent,
+    select comment_id as id, created_at, commenter_igsid, commenter_username, comment_text, is_follower, message_sent,
            status, error, public_reply_sent
     from automation_logs where automation_id = ${id} order by created_at desc limit 500`;
 
@@ -51,8 +52,8 @@ export async function GET(_req: Request, { params }: Ctx) {
 
 // Toggle enabled / edit messages.
 export async function PATCH(req: Request, { params }: Ctx) {
-  const { id } = await params;
-  if (!isId(id)) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const { deny, id: id } = await guard("automation", (await params).id);
+  if (deny) return deny;
   const b = await req.json();
   const allowed = ["enabled", "keyword", "name", "followerMessage", "nonFollowerMessage", "publicReply"];
   const set: Record<string, unknown> = {};
@@ -67,7 +68,8 @@ export async function PATCH(req: Request, { params }: Ctx) {
 }
 
 export async function DELETE(_req: Request, { params }: Ctx) {
-  const { id } = await params;
-  if (isId(id)) await sql`delete from automations where id = ${id}`;
+  const { deny, id: id } = await guard("automation", (await params).id);
+  if (deny) return deny;
+  await sql`delete from automations where id = ${id}`;
   return NextResponse.json({ ok: true });
 }

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Icon } from "./Icon";
 
 export type Thread = {
   userId: string;
@@ -137,17 +138,17 @@ export function Inbox({
               </div>
               <div className="spacer" />
               {current.username && (
-                <a className="btn secondary" href={`https://instagram.com/${current.username}`} target="_blank" rel="noreferrer">Profile ↗</a>
+                <a className="btn secondary" href={`https://instagram.com/${current.username}`} target="_blank" rel="noreferrer"><Icon name="external" size={15} />Profile</a>
               )}
             </header>
             <div className="chat-body">
               {messages.map((m) => (
                 <div key={m.id} className={`bubble-row ${m.direction}`}>
                   <div className={`bubble ${m.direction}`}>
-                    {m.text || (m.hasAttachment ? "📎 Attachment" : "")}
+                    {m.text || (m.hasAttachment ? "Attachment" : "")}
                     <div className="bubble-meta">
                       {new Date(m.sentAt).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-                      {m.source === "automation" && <> · ⚡ {m.automationName ?? "automation"}</>}
+                      {m.source === "automation" && <> · auto-DM: {m.automationName ?? "automation"}</>}
                     </div>
                   </div>
                 </div>

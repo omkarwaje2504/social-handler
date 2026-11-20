@@ -16,7 +16,7 @@ export async function POST(req: Request) {
   await clearPending();
   if (!linked.length) return finish({ error: "no_instagram_account" });
   return finish({
-    accountId: linked[0].id,
+    accountId: linked[0].hash,
     username: linked.map((a) => a.username).join(", @"),
   });
 }

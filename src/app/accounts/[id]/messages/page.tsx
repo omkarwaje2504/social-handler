@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { isId, sql } from "@/lib/db";
+import { sql } from "@/lib/db";
 import type { AccountDoc } from "@/lib/models";
 import { Inbox, type ChatMessage, type Thread } from "@/components/Inbox";
+import { decodeHash } from "@/lib/hash";
+import { Icon } from "@/components/Icon";
 
 export default async function MessagesPage({
   params,
@@ -15,8 +17,9 @@ export default async function MessagesPage({
   await connection();
   const { id } = await params;
   const { user } = await searchParams;
-  if (!isId(id)) notFound();
-  const [account] = await sql<Pick<AccountDoc, "username">[]>`select username from accounts where id = ${id}`;
+  const aid = decodeHash("accounts", id); // id in the URL is the account's code
+  if (!aid) notFound();
+  const [account] = await sql<Pick<AccountDoc, "username">[]>`select username from accounts where id = ${aid}`;
   if (!account) notFound();
 
   const threads = await sql<Thread[]>`
@@ -27,16 +30,16 @@ export default async function MessagesPage({
            text as last_text, sent_at as last_at, direction as last_direction,
            (select count(*)::int from messages m3 where m3.account_id = m.account_id and m3.thread_user_id = m.thread_user_id
               and m3.direction = 'in' and m3.read_at is null) as unread
-    from messages m where account_id = ${id}
+    from messages m where account_id = ${aid}
     order by thread_user_id, sent_at desc`;
   threads.sort((a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime());
 
   const selected = user ?? threads[0]?.userId ?? null;
   const rows = selected
     ? await sql<(ChatMessage & { attachments: unknown })[]>`
-        select m.id, m.direction, m.text, m.sent_at, m.source, m.attachments, a.name as automation_name
+        select m.hash as id, m.direction, m.text, m.sent_at, m.source, m.attachments, a.name as automation_name
         from messages m left join automations a on a.id = m.automation_id
-        where m.account_id = ${id} and m.thread_user_id = ${selected}
+        where m.account_id = ${aid} and m.thread_user_id = ${selected}
         order by m.sent_at asc limit 500`
     : [];
   const messages: ChatMessage[] = rows.map((r) => ({
@@ -53,7 +56,7 @@ export default async function MessagesPage({
   // A thread opened from an automation log may have no stored messages yet.
   if (selected && !threads.some((t) => t.userId === selected)) {
     const [log] = await sql<{ name: string | null }[]>`
-      select commenter_username as name from automation_logs where account_id = ${id} and commenter_igsid = ${selected} limit 1`;
+      select commenter_username as name from automation_logs where account_id = ${aid} and commenter_igsid = ${selected} limit 1`;
     threads.unshift({ userId: selected, username: log?.name ?? null, lastText: "", lastAt: new Date().toISOString(), lastDirection: "out", unread: 0 });
   }
 
@@ -62,8 +65,8 @@ export default async function MessagesPage({
       <div className="page-head">
         <h1>Messages · @{account.username}</h1>
         <div className="spacer" />
-        <Link className="btn secondary" href={`/accounts/${id}/automations`}>⚡ Automations</Link>
-        <Link className="btn secondary" href={`/accounts/${id}`}>← Dashboard</Link>
+        <Link className="btn secondary" href={`/accounts/${id}/automations`}><Icon name="zap" size={16} />Automations</Link>
+        <Link className="btn secondary" href={`/accounts/${id}`}><Icon name="chart" size={16} />Analytics</Link>
       </div>
       <Inbox
         accountId={id}

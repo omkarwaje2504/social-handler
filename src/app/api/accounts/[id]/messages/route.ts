@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { isId, sql } from "@/lib/db";
+import { guard } from "@/lib/auth";
+import { sql } from "@/lib/db";
 import type { AccountDoc } from "@/lib/models";
 import { sendDirectMessage } from "@/lib/graph";
 import { lookupUsername, saveMessage } from "@/lib/inbox";
@@ -8,8 +9,8 @@ type Ctx = { params: Promise<{ id: string }> };
 
 // Reply in a DM thread: { to: IGSID, text }. Meta only allows this within 24 hours of the person's last message.
 export async function POST(req: Request, { params }: Ctx) {
-  const { id } = await params;
-  if (!isId(id)) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const { deny, id: id } = await guard("account", (await params).id);
+  if (deny) return deny;
   const [account] = await sql<AccountDoc[]>`select * from accounts where id = ${id}`;
   if (!account) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -39,8 +40,8 @@ export async function POST(req: Request, { params }: Ctx) {
 
 // Mark a thread as read: { user: IGSID }.
 export async function PATCH(req: Request, { params }: Ctx) {
-  const { id } = await params;
-  if (!isId(id)) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const { deny, id: id } = await guard("account", (await params).id);
+  if (deny) return deny;
   const { user } = (await req.json()) as { user?: string };
   if (user) {
     await sql`update messages set read_at = now()

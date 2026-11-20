@@ -1,4 +1,5 @@
 import { sql } from "@/lib/db";
+import { ensureHash } from "@/lib/hash";
 import type { AccountDoc } from "@/lib/models";
 import { getUserFollowStatus } from "@/lib/graph";
 
@@ -6,7 +7,7 @@ import { getUserFollowStatus } from "@/lib/graph";
 // dashboard can count it per day/week, even after a comment is deleted on Instagram.
 
 export async function saveComment(c: {
-  accountId: string;
+  accountId: number;
   igCommentId: string;
   igMediaId: string;
   parentId?: string | null;
@@ -18,7 +19,7 @@ export async function saveComment(c: {
   isOwn?: boolean;
   commentedAt?: Date;
 }) {
-  await sql`
+  const [saved] = await sql<{ id: number; hash: string | null }[]>`
     insert into comments ${sql({
       accountId: c.accountId,
       igCommentId: c.igCommentId,
@@ -36,7 +37,9 @@ export async function saveComment(c: {
       text = excluded.text,
       like_count = excluded.like_count,
       hidden = excluded.hidden,
-      from_username = coalesce(excluded.from_username, comments.from_username)`;
+      from_username = coalesce(excluded.from_username, comments.from_username)
+    returning id, hash`;
+  await ensureHash("comments", saved);
 }
 
 /** Username of an Instagram user by IGSID (only available after they interacted with the account). */
@@ -73,7 +76,7 @@ export async function refreshFollowStatus(account: AccountDoc, igsid: string): P
 }
 
 export async function saveMessage(m: {
-  accountId: string;
+  accountId: number;
   igMessageId?: string | null;
   threadUserId: string;
   threadUsername?: string | null;
@@ -81,7 +84,7 @@ export async function saveMessage(m: {
   text: string;
   attachments?: unknown;
   source: "webhook" | "reply" | "automation" | "sync";
-  automationId?: string | null;
+  automationId?: number | null;
   sentAt?: Date;
 }) {
   const row = {
@@ -100,7 +103,7 @@ export async function saveMessage(m: {
   // and in either order. Merge them: the same outgoing text in the same thread within 2 minutes is one
   // message; the app's row (automation / reply) keeps its source and automation link.
   if (row.direction === "out" && row.source !== "sync") {
-    const [dupe] = await sql<{ id: string; source: string }[]>`
+    const [dupe] = await sql<{ id: number; source: string }[]>`
       select id, source from messages
       where account_id = ${row.accountId} and thread_user_id = ${row.threadUserId} and direction = 'out'
         and text = ${row.text} and abs(extract(epoch from (sent_at - ${row.sentAt}::timestamptz))) < 120
@@ -116,9 +119,11 @@ export async function saveMessage(m: {
     }
   }
   if (row.igMessageId) {
-    await sql`insert into messages ${sql(row)} on conflict (ig_message_id) do nothing`;
+    const [r] = await sql<{ id: number; hash: string | null }[]>`insert into messages ${sql(row)} on conflict (ig_message_id) do nothing returning id, hash`;
+    await ensureHash("messages", r);
   } else {
-    await sql`insert into messages ${sql(row)}`;
+    const [r] = await sql<{ id: number; hash: string | null }[]>`insert into messages ${sql(row)} returning id, hash`;
+    await ensureHash("messages", r);
   }
   if (m.threadUsername) {
     await sql`update messages set thread_username = ${m.threadUsername}

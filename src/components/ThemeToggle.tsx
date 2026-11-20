@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Icon, type IconName } from "./Icon";
 
 type Mode = "light" | "dark" | "auto";
 const KEY = "sh-theme";
@@ -28,17 +29,17 @@ export function ThemeToggle({ floating = false }: { floating?: boolean }) {
   }, []);
 
   const pick = (m: Mode) => { apply(m); setMode(m); };
-  const opts: { m: Mode; label: string }[] = [
-    { m: "light", label: "☀ Light" },
-    { m: "dark", label: "☾ Dark" },
-    { m: "auto", label: "Auto" },
+  const opts: { m: Mode; label: string; icon: IconName }[] = [
+    { m: "light", label: "Light", icon: "sun" },
+    { m: "dark", label: "Dark", icon: "moon" },
+    { m: "auto", label: "Auto", icon: "monitor" },
   ];
 
   return (
     <div className={`theme-toggle${floating ? " theme-float" : ""}`} role="group" aria-label="Color theme">
       {opts.map((o) => (
-        <button key={o.m} type="button" aria-pressed={mode === o.m} onClick={() => pick(o.m)}>
-          {o.label}
+        <button key={o.m} type="button" aria-pressed={mode === o.m} onClick={() => pick(o.m)} title={`${o.label} theme`}>
+          <Icon name={o.icon} size={14} /><span>{o.label}</span>
         </button>
       ))}
     </div>

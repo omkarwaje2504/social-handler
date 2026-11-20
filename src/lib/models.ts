@@ -2,7 +2,11 @@
 // the sql client converts them to camelCase). Nullable columns come back as null.
 
 export interface AccountDoc {
-  id: string;
+  id: number;
+  hash: string;
+  projectId: number | null;
+  accountType: string;
+  designation: string;
   igUserId: string; // Instagram Business/Creator account id
   pageId: string; // linked Facebook Page id
   username: string;
@@ -22,8 +26,9 @@ export interface AccountDoc {
 }
 
 export interface PostDoc {
-  id: string;
-  accountId: string;
+  id: number;
+  hash: string;
+  accountId: number;
   igMediaId: string;
   mediaType: string; // IMAGE | VIDEO | CAROUSEL_ALBUM | REELS
   mediaUrl?: string | null;
@@ -41,8 +46,8 @@ export interface PostDoc {
 
 /** One row per account per day, written on every sync; powers today/yesterday/week/month deltas. */
 export interface SnapshotDoc {
-  id: string;
-  accountId: string;
+  id: number;
+  accountId: number;
   day: string; // YYYY-MM-DD (server local time)
   followers: number;
   follows: number;
@@ -53,8 +58,9 @@ export interface SnapshotDoc {
 }
 
 export interface ScheduledPostDoc {
-  id: string;
-  accountId: string;
+  id: number;
+  hash: string;
+  accountId: number;
   mediaUrl: string;
   mediaType: "IMAGE" | "REELS";
   caption: string;
@@ -66,8 +72,9 @@ export interface ScheduledPostDoc {
 }
 
 export interface AutomationDoc {
-  id: string;
-  accountId: string;
+  id: number;
+  hash: string;
+  accountId: number;
   name: string;
   keyword: string; // case-insensitive match against comment text
   igMediaId?: string | null; // legacy single post (kept in sync with igMediaIds[0])
@@ -80,9 +87,9 @@ export interface AutomationDoc {
 }
 
 export interface AutomationLogDoc {
-  id: string;
-  automationId: string;
-  accountId: string;
+  id: number;
+  automationId: number;
+  accountId: number;
   igMediaId: string;
   commentId: string;
   commenterIgsid: string;
@@ -97,8 +104,9 @@ export interface AutomationLogDoc {
 }
 
 export interface CommentDoc {
-  id: string;
-  accountId: string;
+  id: number;
+  hash: string;
+  accountId: number;
   igCommentId: string;
   igMediaId: string;
   parentId: string | null;
@@ -114,8 +122,9 @@ export interface CommentDoc {
 }
 
 export interface MessageDoc {
-  id: string;
-  accountId: string;
+  id: number;
+  hash: string;
+  accountId: number;
   igMessageId: string | null;
   threadUserId: string; // the other person's IGSID
   threadUsername: string | null;
@@ -123,7 +132,7 @@ export interface MessageDoc {
   text: string;
   attachments: unknown;
   source: "webhook" | "reply" | "automation" | "sync";
-  automationId: string | null;
+  automationId: number | null;
   sentAt: Date;
   readAt: Date | null;
   createdAt: Date;

@@ -1,22 +1,24 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { isId, sql } from "@/lib/db";
+import { sql } from "@/lib/db";
 import type { AccountDoc, AutomationDoc, AutomationLogDoc, PostDoc } from "@/lib/models";
 import { AutomationCard, AutomationForm } from "@/components/AutomationForm";
 import type { PickablePost } from "@/components/PostPicker";
+import { decodeHash } from "@/lib/hash";
+import { Icon } from "@/components/Icon";
 
 export default async function AutomationsPage({ params }: { params: Promise<{ id: string }> }) {
   await connection();
   const { id } = await params;
-  if (!isId(id)) notFound();
-  const accountId = id;
+  const accountId = decodeHash("accounts", id); // id in the URL is the account's code
+  if (!accountId) notFound();
   const [account] = await sql<Pick<AccountDoc, "username">[]>`select username from accounts where id = ${accountId}`;
   if (!account) notFound();
 
   const [rules, counts, logs, postRows] = await Promise.all([
     sql<AutomationDoc[]>`select * from automations where account_id = ${accountId} order by created_at desc`,
-    sql<{ automationId: string; matched: number; sent: number }[]>`
+    sql<{ automationId: number; matched: number; sent: number }[]>`
       select automation_id, count(*)::int as matched, count(*) filter (where status = 'sent')::int as sent
       from automation_logs where account_id = ${accountId} group by automation_id`,
     sql<(AutomationLogDoc & { ruleName: string | null })[]>`
@@ -41,8 +43,8 @@ export default async function AutomationsPage({ params }: { params: Promise<{ id
       <div className="page-head">
         <h1>Automations · @{account.username}</h1>
         <div className="spacer" />
-        <Link className="btn secondary" href={`/accounts/${id}/messages`}>💬 Messages</Link>
-        <Link className="btn secondary" href={`/accounts/${id}`}>← Dashboard</Link>
+        <Link className="btn secondary" href={`/accounts/${id}/messages`}><Icon name="message" size={16} />Messages</Link>
+        <Link className="btn secondary" href={`/accounts/${id}`}><Icon name="chart" size={16} />Analytics</Link>
       </div>
 
       <div className="card">
@@ -63,7 +65,7 @@ export default async function AutomationsPage({ params }: { params: Promise<{ id
             accountId={id}
             posts={posts}
             rule={{
-              id: r.id,
+              id: r.hash,
               name: r.name,
               keyword: r.keyword,
               enabled: r.enabled,

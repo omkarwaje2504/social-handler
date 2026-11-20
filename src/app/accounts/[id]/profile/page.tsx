@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { isId, sql } from "@/lib/db";
+import { sql } from "@/lib/db";
 import type { AccountDoc, PostDoc } from "@/lib/models";
 import { EditProfileButton } from "@/components/EditProfileButton";
+import { decodeHash } from "@/lib/hash";
+import { Icon } from "@/components/Icon";
 
 const TABS = [
   { key: "posts", label: "POSTS", icon: "▦" },
@@ -23,12 +25,13 @@ export default async function ProfilePage({
   await connection();
   const { id } = await params;
   const { tab = "posts" } = await searchParams;
-  if (!isId(id)) notFound();
-  const [account] = await sql<AccountDoc[]>`select * from accounts where id = ${id}`;
+  const aid = decodeHash("accounts", id); // id in the URL is the account's code
+  if (!aid) notFound();
+  const [account] = await sql<AccountDoc[]>`select * from accounts where id = ${aid}`;
   if (!account) notFound();
 
   const all = await sql<PostDoc[]>`
-    select * from posts where account_id = ${id} and not removed_from_app
+    select * from posts where account_id = ${aid} and not removed_from_app
     order by "timestamp" desc nulls last`;
   const shown = tab === "reels" ? all.filter((p) => p.mediaType === "REELS") : tab === "boosted" ? all.filter((p) => p.boosted) : all;
 
@@ -49,7 +52,7 @@ export default async function ProfilePage({
                 initial={{ name: account.name ?? "", biography: account.biography ?? "", website: account.website ?? "" }}
               />
               <Link className="btn" href={`/accounts/${id}`}>View analytics</Link>
-              <a className="btn secondary" href={`https://instagram.com/${account.username}`} target="_blank" rel="noreferrer" title="Open on Instagram">↗</a>
+              <a className="btn secondary" href={`https://instagram.com/${account.username}`} target="_blank" rel="noreferrer" title="Open on Instagram" aria-label="Open on Instagram"><Icon name="external" size={16} /></a>
             </div>
           </div>
           {account.name && <div className="ig-name">{account.name}</div>}
@@ -61,7 +64,7 @@ export default async function ProfilePage({
           {account.biography && <div className="profile-bio">{account.biography}</div>}
           {account.website && (
             <a href={account.website} target="_blank" rel="noreferrer" className="profile-link">
-              🔗 {account.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
+              <Icon name="link" size={14} /> {account.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
             </a>
           )}
         </div>
@@ -84,14 +87,14 @@ export default async function ProfilePage({
           {shown.map((p) => {
             const src = p.thumbnailUrl || p.mediaUrl;
             return (
-              <Link key={p.id} href={`/posts/${p.id}`} className="tile">
+              <Link key={p.id} href={`/posts/${p.hash}`} className="tile">
                 {src ? <img src={src} alt="" /> : null}
                 {p.mediaType === "REELS" && <span className="tile-badge">▶</span>}
                 {p.mediaType === "CAROUSEL_ALBUM" && <span className="tile-badge">⧉</span>}
-                {p.boosted && <span className="tile-badge" style={{ left: 8, right: "auto" }}>🚀</span>}
+                {p.boosted && <span className="tile-badge" style={{ left: 8, right: "auto", width: "auto", padding: "0 8px", borderRadius: 999 }} title="Boosted">Ad</span>}
                 <div className="tile-overlay">
-                  <span>♥ {p.likeCount}</span>
-                  <span>💬 {p.commentsCount}</span>
+                  <span><Icon name="heart" size={16} /> {p.likeCount}</span>
+                  <span><Icon name="message" size={16} /> {p.commentsCount}</span>
                   {p.metrics?.views != null && <span>▶ {p.metrics.views}</span>}
                 </div>
               </Link>

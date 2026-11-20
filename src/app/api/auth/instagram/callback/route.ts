@@ -104,5 +104,5 @@ export async function GET(req: Request) {
 
   const linked = await saveAccounts(unique, userToken);
   if (!linked.length) return finish({ error: "no_instagram_account" });
-  return finish({ accountId: linked[0].id, username: linked[0].username });
+  return finish({ accountId: linked[0].hash, username: linked[0].username });
 }

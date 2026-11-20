@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { isId, sql } from "@/lib/db";
+import { guard } from "@/lib/auth";
+import { sql } from "@/lib/db";
 import type { AccountDoc } from "@/lib/models";
 import { listConversations } from "@/lib/graph";
 import { saveMessage } from "@/lib/inbox";
@@ -8,8 +9,8 @@ type Ctx = { params: Promise<{ id: string }> };
 
 // Imports the latest Instagram DM conversations (and their recent messages) into the database.
 export async function POST(_req: Request, { params }: Ctx) {
-  const { id } = await params;
-  if (!isId(id)) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const { deny, id: id } = await guard("account", (await params).id);
+  if (deny) return deny;
   const [account] = await sql<AccountDoc[]>`select * from accounts where id = ${id}`;
   if (!account) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (!account.pageId) return NextResponse.json({ error: "This account has no linked Facebook Page." }, { status: 400 });

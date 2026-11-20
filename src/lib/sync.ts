@@ -1,4 +1,5 @@
 import { sql } from "@/lib/db";
+import { ensureHash } from "@/lib/hash";
 import { dayKey, type AccountDoc } from "@/lib/models";
 import { boostedMediaIds } from "@/lib/ads";
 import {
@@ -11,7 +12,7 @@ import {
 } from "@/lib/graph";
 
 /** Pull profile, account insights and all recent posts (with metrics) into the database. */
-export async function syncAccount(accountId: string) {
+export async function syncAccount(accountId: number) {
   const [account] = await sql<AccountDoc[]>`select * from accounts where id = ${accountId}`;
   if (!account) throw new Error("Account not found");
 
@@ -69,7 +70,8 @@ export async function syncAccount(accountId: string) {
         thumbnail_url = excluded.thumbnail_url, permalink = excluded.permalink, caption = excluded.caption,
         "timestamp" = excluded."timestamp", like_count = excluded.like_count,
         comments_count = excluded.comments_count, metrics = excluded.metrics,
-        synced_at = excluded.synced_at, removed_from_app = false`;
+        synced_at = excluded.synced_at, removed_from_app = false
+      returning id, hash`.then(([r]) => ensureHash("posts", r as { id: number; hash: string | null }));
   }
 
   // Mark boosted posts (best effort; needs ads_read on the user token)

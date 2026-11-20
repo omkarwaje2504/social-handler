@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { Icon } from "./Icon";
 
 /**
  * Centered dialog, always on top of the whole screen. It is rendered into <body> through a portal,
@@ -39,7 +40,7 @@ export function Modal({
       <div className={`modal${wide ? " modal-wide" : ""}`} role="dialog" aria-modal="true">
         <div className="modal-head">
           <h2>{title}</h2>
-          <button type="button" className="modal-close" aria-label="Close" onClick={onClose}>×</button>
+          <button type="button" className="modal-close" aria-label="Close" onClick={onClose}><Icon name="x" size={18} /></button>
         </div>
         <div className="modal-body">{children}</div>
       </div>

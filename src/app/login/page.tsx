@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
+import { Icon } from "@/components/Icon";
+import { LoginForm } from "@/components/LoginForm";
+import { SocialNetworkBg } from "@/components/SocialNetworkBg";
+import { safeNext } from "@/lib/session";
 
 export const metadata: Metadata = {
   title: "Sign in",
@@ -8,23 +12,39 @@ export const metadata: Metadata = {
   alternates: { canonical: "/login" },
 };
 
+// Split screen: the SMC story with the social-network hub (large screens), and the sign-in form.
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; next?: string }>;
+  searchParams: Promise<{ error?: string; next?: string; wait?: string }>;
 }) {
   await connection();
-  const { error, next } = await searchParams;
+  const { error, next, wait } = await searchParams;
   return (
-    <div className="auth-wrap">
-      <form className="auth-card" method="post" action="/api/auth/login">
-        <div className="brand brand-lockup center" style={{ padding: "0 0 18px" }}><img src="/icon.svg" alt="" width={34} height={34} /><span>SMC<small>Social Management Center</small></span></div>
-        <input type="hidden" name="next" value={next ?? "/"} />
-        <input type="password" name="password" placeholder="Admin password" required autoFocus />
-        {error && <div className="error">Wrong password.</div>}
-        <button type="submit" style={{ width: "100%", marginTop: 12 }}>Log in</button>
-        <p className="muted" style={{ marginTop: 14, textAlign: "center" }}>Only the account owner can open the dashboard.</p>
-      </form>
+    <div className="login">
+      <aside className="login-art" aria-hidden="true">
+        <div className="brand brand-lockup"><img src="/icon.svg" alt="" width={36} height={36} /><span>SMC<small>Social Management Center</small></span></div>
+        <div className="login-net"><SocialNetworkBg /></div>
+        <div className="login-copy">
+          <h2>Every social account your team manages, in one place.</h2>
+          <p>Analytics, inbox, comment-to-DM automations, scheduling and exports for each client, with access kept to the people who need it.</p>
+          <div className="login-points">
+            <div><Icon name="chart" size={18} />Follower growth, reach and top content per project</div>
+            <div><Icon name="message" size={18} />Shared inbox with auto-DMs on comment keywords</div>
+            <div><Icon name="lock" size={18} />Separate workspaces for every admin and their team</div>
+          </div>
+        </div>
+      </aside>
+
+      <main className="login-panel">
+        <div className="login-card">
+          <div className="brand brand-lockup"><img src="/icon.svg" alt="" width={36} height={36} /><span>SMC<small>Social Management Center</small></span></div>
+          <h1>Sign in</h1>
+          <p className="lead">Welcome back. Use the email your admin set up for you.</p>
+          <LoginForm next={safeNext(next)} error={error} wait={wait} />
+        </div>
+        <div className="login-foot"><a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/data-deletion">Data deletion</a></div>
+      </main>
     </div>
   );
 }

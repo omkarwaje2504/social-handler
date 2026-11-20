@@ -41,7 +41,7 @@ export async function publishDue() {
 /** Keep every account's numbers (and daily snapshots) fresh. */
 export async function autoSync() {
   const cutoff = new Date(Date.now() - AUTO_SYNC_HOURS * 60 * 60 * 1000);
-  const stale = await sql<{ id: string }[]>`
+  const stale = await sql<{ id: number }[]>`
     select id from accounts where last_synced_at is null or last_synced_at < ${cutoff}`;
   for (const a of stale) await syncAccount(a.id).catch((e) => console.warn("auto-sync failed", e.message));
 }

@@ -1,263 +1,304 @@
 import Link from "next/link";
 import { connection } from "next/server";
+import { ROLE_LABEL, type UserDoc, isAdminRole, projectIdsFor, requireUser, scopeSql } from "@/lib/auth";
 import { sql } from "@/lib/db";
-import type { AccountDoc, PostDoc, ScheduledPostDoc } from "@/lib/models";
-import { PERIODS, PERIOD_LABEL, countByPeriod, postsPerDay } from "@/lib/stats";
-import { BarChart, BarList, Stat } from "@/components/charts";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import { type Attention, contentPerWeek, followerTrend, headline, needsAttention, projectSummaries, timeAgo, topContent } from "@/lib/dashboard";
+import { ColumnChart, Kpi, SegmentedBar, TrendChart } from "@/components/charts";
+import { fmtCompact } from "@/lib/format";
+import { Icon } from "@/components/Icon";
+import { ProjectFormButton, type PersonOption } from "@/components/ProjectForm";
 
-type VideoStat = { accountId: string; videos: number; views: string; reach: string; likes: string; comments: string; shares: string; saves: string };
-type PerAccount = { accountId: string; posts: number; reels: number; boosted: number; likes: number; comments: number; lastPost?: Date };
+const pct = (now: number, before: number) => (before ? Math.round(((now - before) / before) * 100) : null);
+const greeting = () => {
+  const h = new Date().getHours();
+  return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+};
 
+// Dashboard, by role. Everything is computed for the accounts of the projects the viewer can open:
+//   super admin → the whole platform (plus admins / users / projects health)
+//   admin       → their own workspace (or a "create your first project" start when they have none)
+//   user        → the projects they were given, with what needs a reply or a fix first
 export default async function Dashboard() {
   await connection();
-  const [accounts, perAccount, pending, registered, postsCount, reelsCount, dmsCount, perDay, videoStats, topContent, activity] = await Promise.all([
-    sql<AccountDoc[]>`select * from accounts`,
-    sql<PerAccount[]>`
-      select account_id,
-        count(*)::int as posts,
-        count(*) filter (where media_type = 'REELS')::int as reels,
-        count(*) filter (where boosted)::int as boosted,
-        coalesce(sum(like_count), 0)::int as likes,
-        coalesce(sum(comments_count), 0)::int as comments,
-        max("timestamp") as last_post
-      from posts where not removed_from_app
-      group by account_id`,
-    sql<ScheduledPostDoc[]>`select * from scheduled_posts where status = 'pending' order by publish_at limit 10`,
-    countByPeriod("accounts", "created_at"),
-    countByPeriod("posts", "timestamp", sql`media_type <> 'REELS'`),
-    countByPeriod("posts", "timestamp", sql`media_type = 'REELS'`),
-    countByPeriod("automation_logs", "created_at", sql`status = 'sent'`),
-    postsPerDay(sql`true`, 30),
-    // Account-wise video (reel) performance from the per-post metrics saved on each sync.
-    sql<VideoStat[]>`
-      select account_id,
-        count(*)::int as videos,
-        coalesce(sum(coalesce((metrics->>'views')::bigint, (metrics->>'plays')::bigint, 0)), 0)::bigint as views,
-        coalesce(sum((metrics->>'reach')::bigint), 0)::bigint as reach,
-        coalesce(sum(like_count), 0)::bigint as likes,
-        coalesce(sum(comments_count), 0)::bigint as comments,
-        coalesce(sum((metrics->>'shares')::bigint), 0)::bigint as shares,
-        coalesce(sum((metrics->>'saved')::bigint), 0)::bigint as saves
-      from posts where not removed_from_app and media_type in ('REELS', 'VIDEO')
-      group by account_id`,
-    sql<(PostDoc & { username: string })[]>`
-      select p.*, a.username from posts p join accounts a on a.id = p.account_id
-      where not p.removed_from_app
-      order by coalesce((p.metrics->>'views')::bigint, (p.metrics->>'plays')::bigint, p.like_count + p.comments_count) desc nulls last
-      limit 8`,
-    sql<{ accountId: string; dms: number; inbox: number; automations: number; views: string }[]>`
-      select a.id as account_id,
-        (select count(*)::int from automation_logs l where l.account_id = a.id and l.status = 'sent') as dms,
-        (select count(*)::int from messages m where m.account_id = a.id and m.direction = 'in') as inbox,
-        (select count(*)::int from automations x where x.account_id = a.id and x.enabled) as automations,
-        (select coalesce(sum(coalesce((p.metrics->>'views')::bigint, (p.metrics->>'plays')::bigint, 0)), 0)::bigint
-           from posts p where p.account_id = a.id and not p.removed_from_app) as views
-      from accounts a`,
+  const user = await requireUser();
+  const ids = await projectIdsFor(user);
+  const isSuper = user.role === "super_admin";
+  const isAdmin = isAdminRole(user);
+
+  if (ids !== null && ids.length === 0) {
+    return user.role === "admin" ? <AdminStart user={user} /> : <NoAccess user={user} />;
+  }
+
+  const accIds = (await sql<{ id: number }[]>`select a.id from accounts a where ${scopeSql(ids, "a.project_id")}`).map((r) => r.id);
+  const [h, trend, weekly, attention, top, projects, platform, admins] = await Promise.all([
+    headline(accIds),
+    followerTrend(accIds, 30),
+    contentPerWeek(accIds, 12),
+    needsAttention(accIds, { projectIds: ids, isSuper, isAdmin }),
+    topContent(accIds, 5),
+    projectSummaries(ids, isSuper ? 8 : 12),
+    isSuper ? platformCounts() : Promise.resolve(null),
+    isSuper
+      ? sql<PersonOption[]>`select hash as id, name, email, designation, role from users where role = 'admin' and active order by name`
+      : Promise.resolve([] as PersonOption[]),
   ]);
-
-  const stats = new Map(perAccount.map((s) => [s.accountId, s]));
-  const actById = new Map(activity.map((x) => [x.accountId, x]));
-  const byId = new Map(accounts.map((a) => [a.id, a]));
-  const sum = (f: (s: PerAccount) => number) => perAccount.reduce((t, s) => t + f(s), 0);
-  const totalFollowers = accounts.reduce((t, a) => t + (a.followersCount ?? 0), 0);
-  const [{ n: scheduledTotal }] = await sql<{ n: number }[]>`select count(*)::int as n from scheduled_posts where status = 'pending'`;
-
-  const engagement = (a: AccountDoc) => {
-    const s = stats.get(a.id);
-    if (!s || !s.posts || !a.followersCount) return "–";
-    return `${(((s.likes + s.comments) / s.posts / a.followersCount) * 100).toFixed(2)}%`;
-  };
-
-  const connectUrl = `${process.env.APP_URL}/api/auth/instagram`;
-  const waText = `Please connect your Instagram account to our analytics app. Open this link and approve access: ${connectUrl}`;
+  const week = trend.delta7;
+  const projectCount = ids === null ? platform!.projects : ids.length;
 
   return (
-    <>
+    <div className="shell">
       <div className="page-head">
-        <h1>Dashboard</h1>
-        <div className="spacer" />
-        <a className="btn secondary" target="_blank" rel="noreferrer" href={`https://wa.me/?text=${encodeURIComponent(waText)}`}>
-          Share link on WhatsApp
-        </a>
-        <a className="btn" href="/api/auth/instagram">+ Connect Instagram</a>
-        <ThemeToggle />
-        <form method="post" action="/api/auth/logout">
-          <button type="submit" className="secondary">Log out</button>
-        </form>
+        <div>
+          <div className="eyebrow">{isSuper ? "Platform overview" : user.role === "admin" ? "Your workspace" : "Your work"}</div>
+          <h1>{greeting()}{user.name ? `, ${user.name.split(" ")[0]}` : ""}</h1>
+          <p className="page-sub">
+            {isSuper
+              ? `Everything across ${projectCount} project${projectCount === 1 ? "" : "s"} and ${accIds.length} connected account${accIds.length === 1 ? "" : "s"}.`
+              : `${ROLE_LABEL[user.role]}${user.designation ? ` · ${user.designation}` : ""} · ${projectCount} project${projectCount === 1 ? "" : "s"}, ${accIds.length} account${accIds.length === 1 ? "" : "s"}. Numbers cover the last 30 days.`}
+          </p>
+        </div>
+        {isAdmin && (
+          <div className="page-actions">
+            <Link className="btn secondary" href="/users?new=1"><Icon name="user" size={16} />Add user</Link>
+            <ProjectFormButton label="New project" admins={admins} isSuper={isSuper} />
+          </div>
+        )}
       </div>
 
-      <div className="grid">
-        <Stat label="Connected accounts" value={accounts.length} />
-        <Stat label="Total followers" value={totalFollowers} />
-        <Stat label="Posts" value={sum((s) => s.posts - s.reels)} />
-        <Stat label="Reels" value={sum((s) => s.reels)} />
-        <Stat label="Boosted posts / reels" value={sum((s) => s.boosted)} hint="Detected from your Meta ad accounts" />
-        <Stat label="Scheduled (pending)" value={scheduledTotal} />
+      {isSuper && platform && (
+        <div className="kpis k4">
+          <Kpi label="Active projects" value={platform.projects} sub={platform.closed ? `${platform.closed} closed` : "none closed"} href="/projects" />
+          <Kpi label="Admins" value={platform.admins} sub={`${platform.idleAdmins} without a project`} href="/users" />
+          <Kpi label="Users" value={platform.users} sub={`${platform.usersNoAccess} without project access`} href="/users" />
+          <Kpi label="Connected accounts" value={accIds.length} sub={platform.unassigned ? `${platform.unassigned} without a project` : "all assigned"} href="/accounts" />
+        </div>
+      )}
+
+      {user.role === "user" && <ProjectCards projects={projects} />}
+
+      {accIds.length === 0 ? (
+        <div className="dash-grid">
+          <section className="panel span-8">
+            <div className="empty">
+              <span className="empty-ico"><Icon name="instagram" size={24} /></span>
+              <b>No Instagram accounts connected yet</b>
+              <span className="muted">
+                {isAdmin
+                  ? "Open a project and use “Connect Instagram”, or send the account owner the project's connect link. Analytics, the inbox and automations appear here after the first sync."
+                  : "Your admin connects the Instagram accounts of your projects. Analytics, the inbox and automations appear here after the first sync."}
+              </span>
+              {isAdmin && <div className="row"><Link className="btn" href="/projects"><Icon name="folder" size={16} />Go to projects</Link></div>}
+            </div>
+          </section>
+          <AttentionPanel items={attention} />
+        </div>
+      ) : (<>
+      <div className="kpis k6">
+        <Kpi label="Followers" value={h.followers} delta={week} sub={week == null ? "change shows after a week of syncs" : "in 7 days"} spark={trend.values.slice(-14)} hint="All accounts together" />
+        <Kpi label="Posts & reels published" value={h.posts30} delta={pct(h.posts30, h.postsPrev)} deltaSuffix="%" sub="vs previous 30 days" />
+        <Kpi label="Views on new content" value={fmtCompact(h.views30)} delta={pct(h.views30, h.viewsPrev)} deltaSuffix="%" sub="vs previous 30 days" hint="Views of posts and reels published in the last 30 days" />
+        <Kpi label="Engagement rate" value={h.engagementRate == null ? null : `${h.engagementRate.toFixed(2)}%`} sub="likes + comments per post ÷ followers" />
+        <Kpi label="Auto-DMs sent" value={h.dms30} delta={pct(h.dms30, h.dmsPrev)} deltaSuffix="%" sub="vs previous 30 days" />
+        <Kpi label="Unanswered chats" value={h.unread} sub={h.scheduled ? `${h.scheduled} post(s) scheduled` : "nothing scheduled"} hint="Conversations with unread messages" />
       </div>
 
-      <h2>Accounts ({accounts.length})</h2>
-      <div className="card" style={{ overflowX: "auto" }}>
-        <table className="perf-table accounts-table">
-          <thead>
-            <tr>
-              <th>Account</th><th>Followers</th><th>Following</th><th>Posts</th><th>Reels</th><th>Views</th>
-              <th>Likes</th><th>Comments</th><th>Engagement</th><th>Auto-DMs</th><th>Inbox</th><th>Last post</th><th>Synced</th><th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {[...accounts]
-              .sort((a, b) => (b.followersCount ?? 0) - (a.followersCount ?? 0))
-              .map((a) => {
-                const s = stats.get(a.id);
-                const act = actById.get(a.id);
-                return (
-                  <tr key={a.id}>
-                    <td>
-                      <Link href={`/accounts/${a.id}`} className="acct-cell">
-                        {a.profilePictureUrl ? <img className="avatar" src={a.profilePictureUrl} alt="" /> : <span className="avatar" />}
-                        <span>
-                          <b>@{a.username}</b>
-                          {a.name && <span className="muted">{a.name}</span>}
-                        </span>
-                      </Link>
-                    </td>
-                    <td>{(a.followersCount ?? 0).toLocaleString()}</td>
-                    <td>{(a.followsCount ?? 0).toLocaleString()}</td>
-                    <td>{((s?.posts ?? 0) - (s?.reels ?? 0)).toLocaleString()}</td>
-                    <td>{(s?.reels ?? 0).toLocaleString()}</td>
-                    <td>{Number(act?.views ?? 0).toLocaleString()}</td>
-                    <td>{(s?.likes ?? 0).toLocaleString()}</td>
-                    <td>{(s?.comments ?? 0).toLocaleString()}</td>
-                    <td>{engagement(a)}</td>
-                    <td>{(act?.dms ?? 0).toLocaleString()}</td>
-                    <td>{(act?.inbox ?? 0).toLocaleString()}</td>
-                    <td>{s?.lastPost ? s.lastPost.toLocaleDateString() : "–"}</td>
-                    <td>{a.lastSyncedAt ? a.lastSyncedAt.toLocaleDateString() : "never"}</td>
-                    <td>
-                      <div className="row" style={{ gap: 6, flexWrap: "nowrap", justifyContent: "flex-end" }}>
-                        <Link className="btn" href={`/accounts/${a.id}`}>Open</Link>
-                        <Link className="btn secondary" href={`/accounts/${a.id}/messages`} title="Messages">💬</Link>
-                        <Link className="btn secondary" href={`/accounts/${a.id}/automations`} title={`Automations (${act?.automations ?? 0} active)`}>⚡</Link>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            {accounts.length === 0 && <tr><td colSpan={14} className="muted">No accounts connected yet. Use “+ Connect Instagram”.</td></tr>}
-          </tbody>
-        </table>
+      <div className="dash-grid">
+        <section className="panel span-8">
+          <div className="panel-body">
+            <TrendChart
+              title="Follower growth"
+              subtitle="Total followers across your accounts, last 30 days"
+              labels={trend.labels}
+              series={[{ name: "Followers", values: trend.values }]}
+              hero={fmtCompact(h.followers)}
+              empty="Follower history builds up from the daily sync. Connect an account and check back tomorrow."
+            />
+          </div>
+        </section>
+        <AttentionPanel items={attention} />
       </div>
 
-      <h2>Activity by day</h2>
-      <div className="card" style={{ overflowX: "auto" }}>
-        <table className="period-table">
-          <thead>
-            <tr><th>Metric</th>{PERIODS.map((p) => <th key={p}>{PERIOD_LABEL[p]}</th>)}</tr>
-          </thead>
-          <tbody>
-            <PeriodRow label="New accounts connected" values={registered} />
-            <PeriodRow label="Posts published" values={postsCount} />
-            <PeriodRow label="Reels published" values={reelsCount} />
-            <PeriodRow label="Auto DMs sent" values={dmsCount} />
-          </tbody>
-        </table>
+      <div className="dash-grid">
+        <section className="panel span-8">
+          <div className="panel-body">
+            <ColumnChart
+              title="Content published per week"
+              subtitle="Posts and reels, last 12 weeks"
+              labels={weekly.labels}
+              series={[{ name: "Posts", values: weekly.posts }, { name: "Reels", values: weekly.reels }]}
+              empty="Nothing published in the last 12 weeks."
+            />
+          </div>
+        </section>
+        <section className="panel span-4">
+          <div className="panel-head"><div><h3>Content mix</h3><p>All synced posts by format</p></div></div>
+          <div className="panel-body">
+            <SegmentedBar parts={[{ label: "Reels & videos", value: h.mix.reels }, { label: "Photos", value: h.mix.posts }, { label: "Carousels", value: h.mix.carousels }]} empty="No posts synced yet." />
+          </div>
+        </section>
       </div>
 
-      <h2>Charts</h2>
-      <div className="charts-2">
-        <BarChart title="Posts & reels published per day (30 days)" points={perDay} valueLabel="Posts" />
-        <BarList
-          title="Followers by account"
-          points={accounts.map((a) => ({ label: a.username, value: a.followersCount ?? 0 })).sort((a, b) => b.value - a.value)}
-          empty="No users connected yet."
-        />
-      </div>
-
-      <h2>🎬 Account-wise video performance</h2>
-      <div className="card" style={{ overflowX: "auto" }}>
-        <table className="perf-table">
-          <thead>
-            <tr><th>Account</th><th>Followers</th><th>Videos</th><th>Views</th><th>Avg views / video</th><th>Reach</th><th>Likes</th><th>Comments</th><th>Shares</th><th>Saves</th><th>Engagement / video</th></tr>
-          </thead>
-          <tbody>
-            {[...videoStats]
-              .sort((a, b) => Number(b.views) - Number(a.views))
-              .map((v) => {
-                const a = byId.get(v.accountId);
-                const eng = Number(v.likes) + Number(v.comments) + Number(v.shares) + Number(v.saves);
-                return (
-                  <tr key={v.accountId}>
-                    <td><Link href={`/accounts/${v.accountId}#content`} style={{ fontWeight: 600 }}>@{a?.username ?? "unknown"}</Link></td>
-                    <td>{(a?.followersCount ?? 0).toLocaleString()}</td>
-                    <td>{v.videos}</td>
-                    <td>{Number(v.views).toLocaleString()}</td>
-                    <td>{v.videos ? Math.round(Number(v.views) / v.videos).toLocaleString() : "–"}</td>
-                    <td>{Number(v.reach).toLocaleString()}</td>
-                    <td>{Number(v.likes).toLocaleString()}</td>
-                    <td>{Number(v.comments).toLocaleString()}</td>
-                    <td>{Number(v.shares).toLocaleString()}</td>
-                    <td>{Number(v.saves).toLocaleString()}</td>
-                    <td><b>{v.videos ? Math.round(eng / v.videos).toLocaleString() : "–"}</b></td>
-                  </tr>
-                );
-              })}
-            {videoStats.length === 0 && <tr><td colSpan={11} className="muted">No videos synced yet.</td></tr>}
-          </tbody>
-        </table>
-      </div>
-
-      <h2>🏆 Top-performing content (all accounts)</h2>
-      <div className="card">
-        {topContent.length === 0 && <div className="muted">No posts synced yet.</div>}
-        <div className="top-grid">
-          {topContent.map((p, i) => (
-            <Link key={p.id} href={`/posts/${p.id}`} className="top-card">
-              <div className="top-media">
-                {p.thumbnailUrl || p.mediaUrl ? <img src={p.thumbnailUrl || p.mediaUrl || undefined} alt="" /> : null}
-                <span className="top-rank">#{i + 1}</span>
-                {p.mediaType === "REELS" && <span className="tile-badge">▶</span>}
+      <div className="dash-grid">
+        <section className="panel span-7">
+          <div className="panel-head">
+            <div><h3>{user.role === "user" ? "Your projects" : "Projects"}</h3><p>{isSuper ? "Largest audiences first" : "Where your accounts live"}</p></div>
+            <Link className="link" href="/projects">View all</Link>
+          </div>
+          <div className="panel-body flush">
+            {projects.length ? (
+              <div className="mini-list">
+                {projects.map((p) => (
+                  <Link key={p.hash} href={`/projects/${p.hash}`} className="mini-row">
+                    <span className="proj-avatar" style={p.brandColor ? { background: p.brandColor } : undefined}>{(p.brand || p.name).slice(0, 1).toUpperCase()}</span>
+                    <span className="grow">
+                      <b>{p.name}</b>
+                      <span>{[p.brand, isSuper ? (p.ownerName ? `Owner: ${p.ownerName}` : "Owner: super admins") : null, `${p.accounts} account${p.accounts === 1 ? "" : "s"}`, `${p.members} user${p.members === 1 ? "" : "s"}`].filter(Boolean).join(" · ")}</span>
+                    </span>
+                    <span className="val">{fmtCompact(Number(p.followers))}<small>followers</small></span>
+                    <span className="val" style={{ minWidth: 58 }}>{p.posts30}<small>posts 30d</small></span>
+                  </Link>
+                ))}
               </div>
-              <div className="top-stats">
-                <b style={{ width: "100%" }}>@{p.username}</b>
-                <span>▶ {(p.metrics?.views ?? p.metrics?.plays ?? 0).toLocaleString()}</span>
-                <span>♥ {p.likeCount.toLocaleString()}</span>
-                <span>💬 {p.commentsCount.toLocaleString()}</span>
-                <span>↗ {(p.metrics?.shares ?? 0).toLocaleString()}</span>
+            ) : <div className="chart-empty">No active projects.</div>}
+          </div>
+        </section>
+        <section className="panel span-5">
+          <div className="panel-head"><div><h3>Top content</h3><p>Most viewed in the last 30 days</p></div></div>
+          <div className="panel-body flush">
+            {top.length ? (
+              <div className="mini-list">
+                {top.map((p, i) => (
+                  <Link key={p.hash} href={`/posts/${p.hash}`} className="mini-row">
+                    <span className="muted num" style={{ width: 16 }}>{i + 1}</span>
+                    {p.thumbnailUrl || p.mediaUrl ? <img className="mini-thumb" src={p.thumbnailUrl || p.mediaUrl || undefined} alt="" /> : <span className="mini-thumb" />}
+                    <span className="grow">
+                      <b>{p.caption?.trim() ? p.caption.trim().slice(0, 80) : p.mediaType === "REELS" ? "Reel" : "Post"}</b>
+                      <span>@{p.username}{p.timestamp ? ` · ${timeAgo(p.timestamp)}` : ""}</span>
+                    </span>
+                    <span className="val">{fmtCompact(Number(p.views))}<small>views</small></span>
+                  </Link>
+                ))}
               </div>
-            </Link>
-          ))}
+            ) : <div className="chart-empty">Nothing published in the last 30 days.</div>}
+          </div>
+        </section>
+      </div>
+      </>)}
+    </div>
+  );
+}
+
+/** A user's projects as cards: open the project or export its data in one click. */
+function ProjectCards({ projects }: { projects: Awaited<ReturnType<typeof projectSummaries>> }) {
+  if (!projects.length) return null;
+  return (
+    <div className="project-cards">
+      {projects.map((p) => (
+        <div key={p.hash} className="project-card">
+          <div className="project-card-head">
+            <span className="proj-avatar" style={p.brandColor ? { background: p.brandColor } : undefined}>{(p.brand || p.name).slice(0, 1).toUpperCase()}</span>
+            <span style={{ minWidth: 0 }}><b>{p.name}</b><span>{p.brand || (p.ownerName ? `Managed by ${p.ownerName}` : "Your project")}</span></span>
+          </div>
+          <div className="project-card-stats">
+            <div><b>{p.accounts}</b><span>accounts</span></div>
+            <div><b>{fmtCompact(Number(p.followers))}</b><span>followers</span></div>
+            <div><b>{p.posts30}</b><span>posts 30d</span></div>
+          </div>
+          <div className="project-card-actions">
+            <Link className="btn sm" href={`/projects/${p.hash}`}>Open project</Link>
+            <Link className="btn secondary sm" href={`/projects/${p.hash}/export`}><Icon name="download" size={15} />Export</Link>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+async function platformCounts() {
+  const [r] = await sql<{ projects: number; closed: number; admins: number; idleAdmins: number; users: number; usersNoAccess: number; unassigned: number }[]>`
+    select
+      (select count(*)::int from projects where status = 'active') as projects,
+      (select count(*)::int from projects where status = 'closed') as closed,
+      (select count(*)::int from users where role = 'admin' and active) as admins,
+      (select count(*)::int from users u where u.role = 'admin' and u.active and not exists (select 1 from projects p where p.owner_id = u.id)) as idle_admins,
+      (select count(*)::int from users where role = 'user' and active) as users,
+      (select count(*)::int from users u where u.role = 'user' and u.active and not exists (select 1 from project_members m where m.user_id = u.id)) as users_no_access,
+      (select count(*)::int from accounts where project_id is null) as unassigned`;
+  return r;
+}
+
+function AttentionPanel({ items }: { items: Attention[] }) {
+  const ICON = { bad: "alert", warn: "clock", info: "info" } as const;
+  return (
+    <section className="panel span-4">
+      <div className="panel-head"><div><h3>Needs attention</h3><p>{items.length ? `${items.length} thing${items.length === 1 ? "" : "s"} to look at` : "Everything is on track"}</p></div></div>
+      <div className="panel-body flush">
+        {items.length ? (
+          <div className="attention">
+            {items.slice(0, 7).map((a, i) => (
+              <div key={i} className="attention-item">
+                <span className={`attention-ico ${a.level}`}><Icon name={ICON[a.level]} size={16} /></span>
+                <span className="attention-text"><b>{a.title}</b><span>{a.detail}</span></span>
+                <Link className="btn secondary sm" href={a.href}>{a.action}</Link>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="all-good"><Icon name="check" size={18} />No overdue replies, failed posts or stale accounts.</div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** An admin without projects: their workspace is empty until they create one. */
+function AdminStart({ user }: { user: UserDoc }) {
+  return (
+    <div className="shell">
+      <div className="page-head">
+        <div>
+          <div className="eyebrow">Your workspace</div>
+          <h1>Welcome{user.name ? `, ${user.name.split(" ")[0]}` : ""}</h1>
+          <p className="page-sub">Your workspace is empty. Projects, people and directory entries you add here are visible only to you, your team and the super admins.</p>
         </div>
       </div>
-
-      <h2>Scheduled posts & reels</h2>
-      <div className="card">
-        {pending.length === 0 && <div className="muted">Nothing scheduled.</div>}
-        {pending.map((s) => {
-          const a = byId.get(s.accountId.toString());
-          return (
-            <div key={s.id} className="list-row">
-              <span className="badge pending">{s.mediaType === "REELS" ? "Reel" : "Post"}</span>
-              <Link href={`/accounts/${s.accountId}/scheduled`} style={{ fontWeight: 600 }}>@{a?.username ?? "unknown"}</Link>
-              <span className="muted" style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.caption || "(no caption)"}</span>
-              <span>{s.publishAt.toLocaleString()}</span>
-            </div>
-          );
-        })}
-      </div>
-
-    </>
+      <section className="panel">
+        <div className="onboard">
+          <div>
+            <h2>Create your first project</h2>
+            <p className="muted" style={{ fontSize: 14, marginBottom: 18 }}>A project groups the Instagram accounts of one client or brand, with its analytics, inbox, automations and exports.</p>
+            <ProjectFormButton label="Create a project" className="btn lg" />
+          </div>
+          <div className="onboard-steps">
+            <div className="onboard-step"><div><b>Create a project</b><span>Name it after the client or brand; agency, company and brand are optional.</span></div></div>
+            <div className="onboard-step"><div><b>Connect Instagram</b><span>Connect the account yourself or send the owner the project&apos;s connect link.</span></div></div>
+            <div className="onboard-step"><div><b>Add your team</b><span>Create users under My team and give them access to the project.</span></div></div>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }
 
-function PeriodRow({ label, values }: { label: string; values: Record<string, number | null> }) {
+/** A user who hasn't been given a project yet. */
+function NoAccess({ user }: { user: UserDoc }) {
   return (
-    <tr>
-      <td>{label}</td>
-      {PERIODS.map((p) => <td key={p}>{values[p] == null ? "–" : values[p]!.toLocaleString()}</td>)}
-    </tr>
+    <div className="shell">
+      <div className="page-head">
+        <div>
+          <h1>Welcome{user.name ? `, ${user.name.split(" ")[0]}` : ""}</h1>
+          <p className="page-sub">You&apos;re signed in as a user.</p>
+        </div>
+      </div>
+      <section className="panel">
+        <div className="empty">
+          <span className="empty-ico"><Icon name="lock" size={24} /></span>
+          <b>No projects yet</b>
+          <span className="muted">You&apos;ll see a project here as soon as your admin gives you access to it. Ask them to add you from the project&apos;s page.</span>
+        </div>
+      </section>
+    </div>
   );
 }
-
 
 export const instant = false;

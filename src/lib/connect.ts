@@ -2,6 +2,7 @@ import { randomBytes } from "crypto";
 import { cookies } from "next/headers";
 import { NextResponse, after } from "next/server";
 import { sql } from "@/lib/db";
+import { decodeHash, ensureHash } from "@/lib/hash";
 import type { AccountDoc } from "@/lib/models";
 import { syncAccount } from "@/lib/sync";
 import { SESSION_COOKIE, isValidSession } from "@/lib/session";
@@ -20,6 +21,8 @@ export interface FoundAccount {
 
 const app = () => process.env.APP_URL!;
 export const PENDING_COOKIE = "ig_pending";
+/** Project the accounts from this login join (set by /api/auth/instagram). */
+export const PROJECT_COOKIE = "ig_project";
 const PENDING_MINUTES = 15;
 
 /**
@@ -41,15 +44,19 @@ export async function finish(target: { error?: string; accountId?: string; usern
  */
 export async function saveAccounts(found: FoundAccount[], userToken: string) {
   const linked: AccountDoc[] = [];
+  const pid = (await cookies()).get(PROJECT_COOKIE)?.value;
+  const projectId = decodeHash("projects", pid); // the cookie holds the project's code
   for (const f of found) {
+    // Reconnecting keeps the account's project unless this login was for a specific project.
     const [doc] = await sql<AccountDoc[]>`
-      insert into accounts (ig_user_id, page_id, username, access_token, user_token)
-      values (${f.igId}, ${f.pageId}, ${f.username}, ${f.token}, ${userToken})
+      insert into accounts (ig_user_id, page_id, username, access_token, user_token, project_id)
+      values (${f.igId}, ${f.pageId}, ${f.username}, ${f.token}, ${userToken}, ${projectId})
       on conflict (ig_user_id) do update set
         page_id = excluded.page_id, username = excluded.username, access_token = excluded.access_token,
-        user_token = excluded.user_token, updated_at = now()
+        user_token = excluded.user_token, project_id = coalesce(excluded.project_id, accounts.project_id),
+        updated_at = now()
       returning *`;
-    if (doc) linked.push(doc);
+    if (doc) linked.push((await ensureHash("accounts", doc))!);
   }
   after(async () => {
     for (const acc of linked) {

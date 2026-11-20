@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal } from "./Modal";
 import { PostPicker, type PickablePost } from "./PostPicker";
+import { Icon } from "./Icon";
 
 type FormValues = {
   name: string;
@@ -144,7 +145,7 @@ export function AutomationCard({ accountId, rule, posts }: { accountId: string; 
         </div>
       </div>
       <div className="auto-actions">
-        <button className="secondary" onClick={() => setStats(true)}>📊 DM stats</button>
+        <button className="secondary" onClick={() => setStats(true)}><Icon name="bars" size={16} />DM stats</button>
         <button className="secondary" onClick={() => setEditing(true)}>Edit</button>
         <button className="secondary" onClick={toggle}>{enabled ? "Pause" : "Activate"}</button>
         <button className="danger" onClick={remove}>Delete</button>

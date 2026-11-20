@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { isId, sql } from "@/lib/db";
+import { sql } from "@/lib/db";
 import type { AccountDoc, PostDoc, ScheduledPostDoc } from "@/lib/models";
 import { accountTotals, dailySeries, demographics } from "@/lib/insights";
 import { PERIODS, PERIOD_LABEL, countByPeriod, postsPerMonth, snapshotDeltas, snapshotSeries } from "@/lib/stats";
@@ -9,6 +9,7 @@ import { BarChart, BarList, LineChart, Stat } from "@/components/charts";
 import { SyncButton } from "@/components/SyncButton";
 import { AccountActions } from "@/components/AccountActions";
 import { SyncingNotice } from "@/components/SyncingNotice";
+import { decodeHash } from "@/lib/hash";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const TYPE_LABEL: Record<string, string> = { IMAGE: "Photos", REELS: "Reels", CAROUSEL_ALBUM: "Carousels", VIDEO: "Videos" };
@@ -52,8 +53,8 @@ export default async function UserDashboard({
   const sp = await searchParams;
   const sort: SortKey = sp.sort && sp.sort in SORTS ? (sp.sort as SortKey) : "views";
   const type = sp.type === "reels" || sp.type === "posts" ? sp.type : "all";
-  if (!isId(id)) notFound();
-  const accountId = id;
+  const accountId = decodeHash("accounts", id); // id in the URL is the account's code
+  if (!accountId) notFound();
   const [account] = await sql<AccountDoc[]>`select * from accounts where id = ${accountId}`;
   if (!account) notFound();
   const { igUserId: ig, accessToken: token } = account;
@@ -143,11 +144,11 @@ export default async function UserDashboard({
       {!account.lastSyncedAt && <SyncingNotice />}
 
       <nav className="section-nav">
-        <a href="#growth">📈 Growth & engagement</a>
-        <a href="#content">🎬 Content performance</a>
-        <a href="#top">🏆 Top content</a>
-        <a href="#regions">🌍 Regions</a>
-        <a href="#messaging">💬 Messages & automations</a>
+        <a href="#growth">Growth & engagement</a>
+        <a href="#content">Content performance</a>
+        <a href="#top">Top content</a>
+        <a href="#regions">Audience regions</a>
+        <a href="#messaging">Messages & automations</a>
       </nav>
 
       {insightsError && (
@@ -159,7 +160,7 @@ export default async function UserDashboard({
 
       {/* ------------------------------------------------------------ Growth */}
       <section id="growth" className="dash-section">
-        <h2>📈 Follower growth & total engagement</h2>
+        <h2>Follower growth & total engagement</h2>
         <div className="grid">
           <Stat label="Followers" value={account.followersCount} />
           <Stat label="New followers (7 days)" value={followersD.week} hint="From daily snapshots" />
@@ -204,7 +205,7 @@ export default async function UserDashboard({
 
       {/* ------------------------------------------------------------ Content */}
       <section id="content" className="dash-section">
-        <h2>🎬 Content performance (updated on every sync)</h2>
+        <h2>Content performance <span className="muted" style={{ fontWeight: 500 }}>· updated on every sync</span></h2>
         <div className="grid">
           <Stat label="Views" value={sum(posts, views)} />
           <Stat label="Reach" value={sum(posts, reach)} />
@@ -245,10 +246,10 @@ export default async function UserDashboard({
               {listed.map((p) => (
                 <tr key={p.id}>
                   <td>
-                    <Link href={`/posts/${p.id}`} className="row" style={{ flexWrap: "nowrap", gap: 10 }}>
+                    <Link href={`/posts/${p.hash}`} className="row" style={{ flexWrap: "nowrap", gap: 10 }}>
                       {p.thumbnailUrl || p.mediaUrl ? <img className="thumb" style={{ width: 40, height: 40 }} src={p.thumbnailUrl || p.mediaUrl || undefined} alt="" /> : null}
                       <span className="cap">{(p.caption || "(no caption)").slice(0, 40)}</span>
-                      {p.boosted && <span title="Boosted">🚀</span>}
+                      {p.boosted && <span className="badge accent" title="Boosted with Meta ads">Boosted</span>}
                     </Link>
                   </td>
                   <td>{date(p)}</td>
@@ -284,14 +285,14 @@ export default async function UserDashboard({
 
       {/* ------------------------------------------------------------ Top content */}
       <section id="top" className="dash-section">
-        <h2>🏆 Top-performing content</h2>
+        <h2>Top-performing content</h2>
         <TopGrid title="Top posts & reels (by views)" items={top} />
         {topReels.length > 0 && <TopGrid title="Top videos / reels" items={topReels} />}
       </section>
 
       {/* ------------------------------------------------------------ Regions */}
       <section id="regions" className="dash-section">
-        <h2>🌍 Audience regions</h2>
+        <h2>Audience regions</h2>
         <div className="grid">
           <Stat label="Top city (local)" value={localCity ? `${localCity.key} · ${pct(localCity.value, cityRows)}` : null} />
           <Stat label="Home country" value={homeCountry ? `${homeCountry.key} · ${pct(homeCountry.value, countryRows)}` : null} />
@@ -313,7 +314,7 @@ export default async function UserDashboard({
       {/* ------------------------------------------------------------ Messaging */}
       <section id="messaging" className="dash-section">
         <div className="row">
-          <h2>💬 Messages & automations</h2>
+          <h2>Messages & automations</h2>
           <div className="spacer" />
           <Link className="btn secondary" href={`/accounts/${id}/messages`}>Open inbox</Link>
           <Link className="btn secondary" href={`/accounts/${id}/automations`}>Automations</Link>
@@ -353,7 +354,7 @@ function TopGrid({ title, items }: { title: string; items: PostDoc[] }) {
       <h3>{title}</h3>
       <div className="top-grid">
         {items.map((p, i) => (
-          <Link key={p.id} href={`/posts/${p.id}`} className="top-card">
+          <Link key={p.id} href={`/posts/${p.hash}`} className="top-card">
             <div className="top-media">
               {p.thumbnailUrl || p.mediaUrl ? <img src={p.thumbnailUrl || p.mediaUrl || undefined} alt="" /> : null}
               <span className="top-rank">#{i + 1}</span>
@@ -361,10 +362,10 @@ function TopGrid({ title, items }: { title: string; items: PostDoc[] }) {
             </div>
             <div className="top-stats">
               <span>▶ {n(views(p))}</span>
-              <span>♥ {n(p.likeCount)}</span>
-              <span>💬 {n(p.commentsCount)}</span>
-              <span>↗ {n(shares(p))}</span>
-              <span>🔖 {n(saves(p))}</span>
+              <span>{n(p.likeCount)} likes</span>
+              <span>{n(p.commentsCount)} comments</span>
+              <span>{n(shares(p))} shares</span>
+              <span>{n(saves(p))} saves</span>
             </div>
           </Link>
         ))}

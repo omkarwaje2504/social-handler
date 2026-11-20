@@ -33,6 +33,4 @@ export const sql = new Proxy(function () {} as unknown as postgres.Sql, {
   },
 });
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** Row ids are UUIDs; anything else (old Mongo ids, typos) can never match a row. */
-export const isId = (v: unknown): v is string => typeof v === "string" && UUID.test(v);
+// Row ids are integers used only on the server; the browser sees 7-character codes (src/lib/hash.ts).

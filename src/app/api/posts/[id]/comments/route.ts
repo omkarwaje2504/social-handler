@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
-import { isId, sql } from "@/lib/db";
+import { guard } from "@/lib/auth";
+import { sql } from "@/lib/db";
 import { listComments, replyToComment, setCommentHidden, deleteComment } from "@/lib/graph";
 import type { AccountDoc, CommentDoc, PostDoc } from "@/lib/models";
 import { saveComment } from "@/lib/inbox";
+import { toPublic } from "@/lib/hash";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-async function loadPostAndAccount(id: string) {
-  if (!isId(id)) return null;
+async function loadPostAndAccount(id: number) {
   const [post] = await sql<PostDoc[]>`select * from posts where id = ${id}`;
   if (!post) return null;
   const [account] = await sql<AccountDoc[]>`select * from accounts where id = ${post.accountId}`;
@@ -18,7 +19,8 @@ async function loadPostAndAccount(id: string) {
 // Comments of the post: refreshed from Instagram into the database, then returned from the database,
 // so comments deleted from the app are still listed (with deletedAt set).
 export async function GET(_req: Request, { params }: Ctx) {
-  const { id } = await params;
+  const { deny, id: id } = await guard("post", (await params).id);
+  if (deny) return deny;
   const ctx = await loadPostAndAccount(id);
   if (!ctx) return NextResponse.json({ error: "Not found" }, { status: 404 });
   let liveError: string | null = null;
@@ -43,13 +45,14 @@ export async function GET(_req: Request, { params }: Ctx) {
   }
   const rows = await sql<CommentDoc[]>`
     select * from comments where ig_media_id = ${ctx.post.igMediaId} order by commented_at desc`;
-  return NextResponse.json({ comments: rows, liveError });
+  return NextResponse.json({ comments: toPublic(rows), liveError });
 }
 
 // { commentId, action: "reply" | "hide" | "unhide" | "delete", message? }
 // "delete" removes the comment on Instagram but keeps the row (deleted_at); /api/comments/[cid] purges it.
 export async function POST(req: Request, { params }: Ctx) {
-  const { id } = await params;
+  const { deny, id: id } = await guard("post", (await params).id);
+  if (deny) return deny;
   const ctx = await loadPostAndAccount(id);
   if (!ctx) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const token = ctx.account.accessToken;
