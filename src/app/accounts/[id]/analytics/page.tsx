@@ -5,3 +5,5 @@ export default async function AnalyticsPage({ params }: { params: Promise<{ id: 
   const { id } = await params;
   redirect(`/accounts/${id}`);
 }
+
+export const instant = false;

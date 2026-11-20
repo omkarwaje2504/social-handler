@@ -5,3 +5,5 @@ export default async function EditProfilePage({ params }: { params: Promise<{ id
   const { id } = await params;
   redirect(`/accounts/${id}/profile`);
 }
+
+export const instant = false;
