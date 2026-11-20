@@ -71,11 +71,14 @@ export async function GET(req: Request) {
   }
 
   // 2) Instagram accounts assigned to your Business portfolios (no Page link needed)
+  // Needs business_management; without it (not approved yet) this is skipped and the next step runs.
   if (found.length === 0) {
     const biz = await fetch(
       `${GRAPH}/me/businesses?fields=id,name,instagram_business_accounts{id,username}&access_token=${encodeURIComponent(userToken)}`,
-    ).then((r) => r.json());
-    if (biz.error) console.error("me/businesses failed", biz.error);
+    )
+      .then((r) => r.json())
+      .catch((e: Error) => ({ error: { message: e.message } }));
+    if (biz.error) console.warn("me/businesses skipped:", biz.error.message ?? biz.error);
     for (const b of biz.data ?? []) {
       for (const ig of b.instagram_business_accounts?.data ?? []) {
         found.push({ igId: ig.id, username: ig.username ?? "", pageId: "", token: userToken });
